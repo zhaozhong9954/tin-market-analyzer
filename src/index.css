@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* 基础背景和文字颜色，防止加载瞬间闪白 */
+@layer base {
+  body {
+    @apply bg-[#020617] text-slate-200 antialiased;
+    margin: 0;
+  }
+}
