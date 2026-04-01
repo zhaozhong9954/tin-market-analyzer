@@ -65,9 +65,16 @@ const App = () => {
           ? parseFloat(raw.change_percent.replace('%', ''))
           : raw.change_percent;
 
+        /**
+         * 🛠 修复：字段映射适配
+         * 处理 n8n 输出可能为 outlook_analysis 的情况
+         */
+        const outlookContent = raw.outlook || raw.outlook_analysis || "";
+
         return { 
           id: doc.id, 
           ...raw,
+          outlook: outlookContent, // 统一导出为 outlook 供前端使用
           lme_price_numeric: cleanPrice,
           change_percent_numeric: cleanPercent
         };
@@ -195,7 +202,7 @@ const App = () => {
                 <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[2.5rem] shadow-xl shadow-blue-900/20">
                   <Zap className="text-yellow-400 mb-4" fill="currentColor" size={28} />
                   <h3 className="text-xl font-bold text-white mb-4 tracking-tight text-left">AI 预测策略</h3>
-                  <p className="text-blue-50 text-sm leading-relaxed opacity-90 text-left">
+                  <p className="text-blue-50 text-sm leading-relaxed opacity-90 text-left whitespace-pre-line">
                     {latestReport.outlook || "AI 正在评估未来趋势，请稍后刷新。"}
                   </p>
                 </div>
