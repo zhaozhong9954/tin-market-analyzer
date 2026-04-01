@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, TrendingDown, Zap, Home, Layers, BarChart3, BookOpen, 
   Database, Activity, Info, Calendar, FileText, HelpCircle, 
-  ChevronRight, ArrowRight, ExternalLink, Globe
+  ChevronRight, ArrowRight, ExternalLink, Globe, Search
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -38,6 +38,7 @@ const App = () => {
   const [latestReport, setLatestReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [showDebug, setShowDebug] = useState(false); // 调试模式开关
 
   // 1. 匿名登录
   useEffect(() => {
@@ -69,14 +70,22 @@ const App = () => {
           : raw.change_percent;
 
         /**
-         * 🛠 智能适配：处理 outlook 可能存在的各种键名
+         * 🛠 终极修复：智能字段探测
+         * 1. 先找 outlook 开头的字段
+         * 2. 再找包含 outlook 的字段 (不分大小写)
+         * 3. 最后兜底 fallback
          */
-        const outlookContent = 
-          raw.outlook || 
-          raw.outlook_analysis || 
-          raw.outlook_text || 
-          raw.market_outlook || 
-          "";
+        let outlookContent = "";
+        const allKeys = Object.keys(raw);
+        
+        // 寻找任何包含 "outlook" 且有值的字段
+        const smartKey = allKeys.find(k => k.toLowerCase().includes('outlook') && raw[k] !== null && raw[k] !== "");
+        
+        if (smartKey) {
+          outlookContent = raw[smartKey];
+        } else {
+          outlookContent = raw.analysis || raw.summary_detail || "";
+        }
 
         return { 
           id: doc.id, 
@@ -93,7 +102,7 @@ const App = () => {
       setLoading(false);
     }, (error) => {
       console.error("Firestore error:", error);
-      setErrorMsg("获取数据失败，请检查数据库权限设置。");
+      setErrorMsg("获取数据失败，请检查数据库权限。");
       setLoading(false);
     });
 
@@ -111,7 +120,7 @@ const App = () => {
       <div className="min-h-screen bg-[#020617] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-blue-500 font-black tracking-widest text-[10px] uppercase animate-pulse">Synchronizing Intelligence...</p>
+          <p className="text-blue-500 font-black tracking-widest text-[10px] uppercase animate-pulse">Syncing Data...</p>
         </div>
       </div>
     );
@@ -152,7 +161,13 @@ const App = () => {
           </button>
         </nav>
 
-        <div className="mt-auto">
+        <div className="mt-auto space-y-4">
+           <button 
+            onClick={() => setShowDebug(!showDebug)}
+            className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-blue-500 transition-colors border border-slate-900 rounded-xl"
+          >
+            <Search size={12} /> {showDebug ? "Hide Debug" : "Inspect Data"}
+          </button>
           <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50">
             <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
@@ -171,11 +186,26 @@ const App = () => {
           </div>
         )}
 
+        {/* 调试视图：显示原始数据的所有 Key */}
+        {showDebug && latestReport && (
+          <div className="mb-10 p-6 bg-slate-900 border border-blue-500/30 rounded-3xl animate-in fade-in zoom-in duration-300">
+            <h4 className="text-blue-500 font-black text-[10px] uppercase tracking-widest mb-4">Raw Data Inspector</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {Object.keys(latestReport).map(key => (
+                <div key={key} className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <p className="text-[10px] text-slate-500 font-mono mb-1">{key}</p>
+                  <p className="text-xs font-bold truncate text-slate-300">{String(latestReport[key])}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 1. 市场仪表盘视图 */}
         {view === 'market' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 text-left">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="mb-12 text-left">
-              <div className="flex items-center gap-2 mb-4 text-left">
+              <div className="flex items-center gap-2 mb-4">
                 <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic shadow-lg shadow-blue-900/20">Market Live</span>
                 <span className="text-blue-500 font-mono text-xs font-bold ml-2 text-left">BATCH: {latestReport?.id}</span>
               </div>
@@ -235,16 +265,16 @@ const App = () => {
                   </div>
                   <h3 className="text-xl font-black text-white mb-6 tracking-tight uppercase italic text-left">AI 预测策略</h3>
                   <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line text-left">
-                    {latestReport?.outlook || "AI 正在对未来供需关系进行深度建模预测，请稍后刷新。"}
+                    {latestReport?.outlook || "AI 正在对未来供需关系进行深度建模预测，请稍后刷新。若此项为空，请检查数据库字段映射。"}
                   </p>
                 </div>
 
-                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[3rem] border-dashed text-left text-left">
+                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[3rem] border-dashed text-left">
                   <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-sm tracking-widest text-slate-400 text-left">往期报告存档</h3>
                   <div className="space-y-4 text-left">
                     {reports.length > 1 ? (
                       reports.slice(1, 6).map((r, idx) => (
-                        <div key={idx} className="flex items-center justify-between group cursor-pointer text-left text-left">
+                        <div key={idx} className="flex items-center justify-between group cursor-pointer text-left">
                           <div className="flex flex-col text-left">
                             <span className="text-[10px] text-slate-500 font-mono tracking-tighter uppercase text-left">{r.id}</span>
                             <span className="text-sm font-bold text-slate-300 group-hover:text-blue-400 transition-colors tracking-tight text-left">${r.lme_price}</span>
@@ -278,7 +308,7 @@ const App = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
               {[1, 2].map(i => (
                 <div key={i} className="bg-slate-900/50 border border-slate-800 p-8 rounded-[3rem] group hover:border-blue-600/50 transition-all cursor-pointer text-left">
-                  <div className="w-12 h-12 bg-indigo-600/20 rounded-2xl flex items-center justify-center mb-6 text-indigo-400 group-hover:scale-110 transition-transform text-left">
+                  <div className="w-12 h-12 bg-indigo-600/20 rounded-2xl flex items-center justify-center mb-6 text-indigo-400 group-hover:scale-110 transition-transform">
                     <FileText size={24} />
                   </div>
                   <h3 className="text-xl font-black text-white mb-3 text-left">2026 Q{i} 锡精矿供应缺口分析</h3>
@@ -301,16 +331,16 @@ const App = () => {
             </header>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 text-left">
-              <div className="lg:col-span-1 space-y-2 text-left text-left">
+              <div className="lg:col-span-1 space-y-2 text-left">
                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4 text-left">词条分类</p>
                 {['基础知识', '定价机制', '下游应用', '环保政策'].map(t => (
                   <button key={t} className="w-full text-left px-4 py-2 text-sm font-bold text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg transition-all">{t}</button>
                 ))}
               </div>
-              <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6 text-left text-left">
+              <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
                  {['LME 升贴水', 'FOT 报价', '焊料应用', '半导体封测'].map(item => (
-                   <div key={item} className="bg-slate-900/30 border border-slate-800 p-6 rounded-2xl flex items-center justify-between group hover:bg-slate-900 transition-colors cursor-pointer text-left text-left">
-                     <span className="font-bold text-slate-300 text-left text-left">{item}</span>
+                   <div key={item} className="bg-slate-900/30 border border-slate-800 p-6 rounded-2xl flex items-center justify-between group hover:bg-slate-900 transition-colors cursor-pointer text-left">
+                     <span className="font-bold text-slate-300 text-left">{item}</span>
                      <ChevronRight size={16} className="text-slate-600 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
                    </div>
                  ))}
