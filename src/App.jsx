@@ -69,7 +69,7 @@ const App = () => {
          * 🛠 修复：字段映射适配
          * 处理 n8n 输出可能为 outlook_analysis 的情况
          */
-        const outlookContent = raw.outlook || raw.outlook_analysis || "";
+        const outlookContent = raw.outlook_analysis || "";
 
         return { 
           id: doc.id, 
