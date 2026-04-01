@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  TrendingUp, TrendingDown, Zap, Home, Layers, BarChart3, BookOpen, Database, Activity, Info
+  TrendingUp, TrendingDown, Zap, Home, Layers, BarChart3, BookOpen, 
+  Database, Activity, Info, Calendar, FileText, HelpCircle, 
+  ChevronRight, ArrowRight, ExternalLink, Globe
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -30,6 +32,7 @@ const db = getFirestore(app);
 const appId = "tin-market-analyzer";
 
 const App = () => {
+  const [view, setView] = useState('market'); // 'market', 'quarterly', 'wiki'
   const [user, setUser] = useState(null);
   const [reports, setReports] = useState([]);
   const [latestReport, setLatestReport] = useState(null);
@@ -55,90 +58,106 @@ const App = () => {
       const data = snapshot.docs.map(doc => {
         const raw = doc.data();
         
-        // 数据清洗：统一处理价格
+        // 价格清洗 (字符串 -> 数字)
         const cleanPrice = typeof raw.lme_price === 'string' 
           ? parseFloat(raw.lme_price.replace(/,/g, '')) 
           : raw.lme_price;
 
-        // 数据清洗：统一处理涨跌幅 (确保为数字)
+        // 涨跌幅清洗
         const cleanPercent = typeof raw.change_percent === 'string'
           ? parseFloat(raw.change_percent.replace('%', ''))
           : raw.change_percent;
 
         /**
-         * 🛠 修复：字段映射适配
-         * 处理 n8n 输出可能为 outlook_analysis 的情况
+         * 🛠 修复 Outlook 映射
+         * 尝试匹配 n8n 可能输出的所有字段名
          */
-        const outlookContent = raw.outlook_analysis || "";
+        const outlookContent = raw.outlook || raw.outlook_analysis || raw.outlook_text || "";
 
         return { 
           id: doc.id, 
           ...raw,
-          outlook: outlookContent, // 统一导出为 outlook 供前端使用
+          outlook: outlookContent,
           lme_price_numeric: cleanPrice,
           change_percent_numeric: cleanPercent
         };
       });
       
       const sortedData = data.sort((a, b) => b.id.localeCompare(a.id));
-      
       setReports(sortedData);
       setLatestReport(sortedData[0] || null);
       setLoading(false);
     }, (error) => {
       console.error("Firestore error:", error);
-      setErrorMsg("获取数据失败，请检查数据库权限规则设置。");
+      setErrorMsg("获取数据失败，请检查数据库权限。");
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [user]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-blue-500 font-black tracking-widest text-[10px] uppercase animate-pulse">Data Syncing...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // 渲染错误边界预防
+  // 渲染助手：颜色判断
   const isNegative = (val) => {
     const num = parseFloat(String(val).replace('%', ''));
     return num < 0;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-blue-500 font-black tracking-widest text-[10px] uppercase animate-pulse">Syncing Data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans text-left">
-      <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800 hidden lg:flex flex-col p-8 text-left">
+    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans text-left selection:bg-blue-500/30">
+      {/* 侧边栏 */}
+      <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-900 hidden lg:flex flex-col p-8 text-left z-20">
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
             <Layers className="text-white" size={24} />
           </div>
           <div className="flex flex-col">
-            <span className="text-lg font-black text-white leading-none tracking-tighter">TIN-MARKET</span>
+            <span className="text-lg font-black text-white leading-none tracking-tighter uppercase">Tin Market</span>
             <span className="text-[10px] text-blue-500 font-black tracking-[0.2em] uppercase">Control Center</span>
           </div>
         </div>
         
         <nav className="space-y-2 flex-1">
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-600/10 text-blue-400 border border-blue-600/20 font-bold text-sm">
+          <button 
+            onClick={() => setView('market')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'market' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
+          >
             <Home size={18} /> 市场仪表盘
+          </button>
+          <button 
+            onClick={() => setView('quarterly')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
+          >
+            <Calendar size={18} /> 季度深度报告
+          </button>
+          <button 
+            onClick={() => setView('wiki')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'wiki' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
+          >
+            <BookOpen size={18} /> 锡业百科
           </button>
         </nav>
 
-        <div className="mt-auto bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50 text-left">
+        <div className="mt-auto bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50">
           <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
             <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
             Connected
           </div>
-          <p className="text-slate-500 text-[9px] font-mono truncate">{appId}</p>
+          <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">{appId}</p>
         </div>
       </aside>
 
+      {/* 主界面 */}
       <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto">
         {errorMsg && (
           <div className="mb-8 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-400 text-sm">
@@ -146,27 +165,31 @@ const App = () => {
           </div>
         )}
 
-        {latestReport ? (
+        {/* 1. 市场仪表盘视图 */}
+        {view === 'market' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="mb-12">
               <div className="flex items-center gap-2 mb-4">
-                <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase">Latest Batch</span>
-                <span className="text-blue-500 font-mono text-xs font-bold">ID: {latestReport.id}</span>
+                <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic shadow-lg shadow-blue-900/20">Market Live</span>
+                <span className="text-blue-500 font-mono text-xs font-bold ml-2">BATCH: {latestReport?.id}</span>
               </div>
-              <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter">精锡市场周度监测报告</h1>
-              <div className="flex items-baseline gap-4">
-                <div className="text-4xl font-mono font-black text-white tracking-tighter">${latestReport.lme_price}</div>
-                <div className={`text-lg font-bold ${isNegative(latestReport.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
-                  {latestReport.change_percent}%
+              <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter uppercase italic">精锡市场周度监测报告</h1>
+              {latestReport && (
+                <div className="flex items-baseline gap-4">
+                  <div className="text-5xl font-mono font-black text-white tracking-tighter italic">${latestReport.lme_price}</div>
+                  <div className={`text-xl font-bold ${isNegative(latestReport.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    {latestReport.change_percent}%
+                  </div>
                 </div>
-              </div>
+              )}
             </header>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 bg-slate-950 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
+              {/* 图表卡片 */}
+              <div className="lg:col-span-2 bg-slate-950 border border-slate-800 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] -z-10" />
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic">
-                  <BarChart3 size={20} className="text-blue-500" /> LME 价格走势分析
+                  <BarChart3 size={22} className="text-blue-500" /> LME 价格趋势波动
                 </h3>
                 
                 <div className="h-[300px] w-full">
@@ -174,7 +197,7 @@ const App = () => {
                     <AreaChart data={[...reports].reverse()}>
                       <defs>
                         <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
                           <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
@@ -182,50 +205,53 @@ const App = () => {
                       <XAxis dataKey="id" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} dy={10} />
                       <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} domain={['auto', 'auto']} hide />
                       <Tooltip 
-                        contentStyle={{ backgroundColor: '#020617', border: '1px solid #1e293b', borderRadius: '12px', fontSize: '12px' }}
+                        contentStyle={{ backgroundColor: '#020617', border: '1px solid #1e293b', borderRadius: '16px', fontSize: '12px' }}
                         itemStyle={{ color: '#3b82f6', fontWeight: 'bold' }}
                       />
-                      <Area type="monotone" dataKey="lme_price_numeric" stroke="#3b82f6" strokeWidth={4} fill="url(#chartGrad)" animationDuration={1500} />
+                      <Area type="monotone" dataKey="lme_price_numeric" stroke="#3b82f6" strokeWidth={5} fill="url(#chartGrad)" animationDuration={1500} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
 
-                <div className="mt-10 p-6 bg-blue-900/10 border border-blue-500/20 rounded-3xl">
-                  <h4 className="text-[10px] font-black text-blue-400 mb-2 uppercase tracking-[0.2em]">本周核心摘要</h4>
-                  <p className="text-slate-300 leading-relaxed text-sm italic font-medium">
-                    "{latestReport.summary || "正在生成市场总结..."}"
+                <div className="mt-10 p-8 bg-blue-900/10 border border-blue-500/20 rounded-[2rem]">
+                  <h4 className="text-[10px] font-black text-blue-400 mb-3 uppercase tracking-[0.3em]">本周核心摘要</h4>
+                  <p className="text-slate-200 leading-relaxed text-sm italic font-medium">
+                    "{latestReport?.summary || "正在同步最新的市场概览内容..."}"
                   </p>
                 </div>
               </div>
 
+              {/* 侧边分析 */}
               <div className="space-y-8">
-                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[2.5rem] shadow-xl shadow-blue-900/20">
-                  <Zap className="text-yellow-400 mb-4" fill="currentColor" size={28} />
-                  <h3 className="text-xl font-bold text-white mb-4 tracking-tight text-left">AI 预测策略</h3>
-                  <p className="text-blue-50 text-sm leading-relaxed opacity-90 text-left whitespace-pre-line">
-                    {latestReport.outlook || "AI 正在评估未来趋势，请稍后刷新。"}
+                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[3rem] shadow-xl shadow-blue-900/20 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                    <Zap size={64} fill="white" />
+                  </div>
+                  <h3 className="text-xl font-black text-white mb-6 tracking-tight uppercase italic">AI 预测策略</h3>
+                  <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line">
+                    {latestReport?.outlook || latestReport?.outlook_analysis || "AI 正在对未来供需关系进行深度建模预测，请稍后刷新。"}
                   </p>
                 </div>
 
-                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem]">
-                  <h3 className="text-white font-bold mb-6 flex items-center gap-2 italic text-left">往期存档</h3>
+                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[3rem] border-dashed">
+                  <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-sm tracking-widest text-slate-400">往期报告存档</h3>
                   <div className="space-y-4">
                     {reports.length > 1 ? (
-                      reports.slice(1, 6).map((report, idx) => (
-                        <div key={idx} className="flex items-center justify-between group cursor-pointer text-left">
+                      reports.slice(1, 6).map((r, idx) => (
+                        <div key={idx} className="flex items-center justify-between group cursor-pointer">
                           <div className="flex flex-col">
-                            <span className="text-[10px] text-slate-500 font-mono tracking-tighter">{report.id}</span>
-                            <span className="text-sm font-bold text-slate-300 group-hover:text-blue-400 transition-colors">${report.lme_price}</span>
+                            <span className="text-[10px] text-slate-500 font-mono tracking-tighter uppercase">{r.id}</span>
+                            <span className="text-sm font-bold text-slate-300 group-hover:text-blue-400 transition-colors tracking-tight">${r.lme_price}</span>
                           </div>
-                          <div className={`text-[10px] font-bold ${isNegative(report.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
-                            {report.change_percent}%
+                          <div className={`text-[10px] font-black ${isNegative(r.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
+                            {r.change_percent}%
                           </div>
                         </div>
                       ))
                     ) : (
-                      <div className="py-10 text-center border-2 border-dashed border-slate-800 rounded-3xl">
-                        <Database className="mx-auto text-slate-700 mb-2" size={24} />
-                        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">暂无更多存档</p>
+                      <div className="py-12 text-center">
+                        <Database className="mx-auto text-slate-800 mb-3" size={32} />
+                        <p className="text-slate-600 text-[10px] font-black uppercase tracking-[0.2em]">No Archived Data</p>
                       </div>
                     )}
                   </div>
@@ -233,10 +259,57 @@ const App = () => {
               </div>
             </div>
           </div>
-        ) : (
-          <div className="text-center py-20 bg-slate-900/20 rounded-[3rem] border border-dashed border-slate-800">
-            <Activity className="mx-auto text-slate-700 mb-4 animate-pulse" size={48} />
-            <h2 className="text-xl font-bold text-slate-500">等待数据库推送第一份报告...</h2>
+        )}
+
+        {/* 2. 季度报告视图 */}
+        {view === 'quarterly' && (
+          <div className="animate-in fade-in slide-in-from-left-4 duration-500">
+            <header className="mb-12">
+              <span className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase mb-4 inline-block">Deep Analysis</span>
+              <h1 className="text-4xl lg:text-5xl font-black text-white tracking-tighter uppercase italic">季度锡产业深度展望</h1>
+            </header>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {[1, 2].map(i => (
+                <div key={i} className="bg-slate-900/50 border border-slate-800 p-8 rounded-[3rem] group hover:border-blue-600/50 transition-all cursor-pointer">
+                  <div className="w-12 h-12 bg-indigo-600/20 rounded-2xl flex items-center justify-center mb-6 text-indigo-400 group-hover:scale-110 transition-transform">
+                    <FileText size={24} />
+                  </div>
+                  <h3 className="text-xl font-black text-white mb-3">2026 Q{i} 锡精矿供应缺口分析</h3>
+                  <p className="text-slate-400 text-sm leading-relaxed mb-6">针对主要生产国（缅甸、印尼、刚果金）的最新进出口数据及矿山复产进度的深度垂直报告...</p>
+                  <div className="flex items-center gap-2 text-blue-500 font-black text-[10px] uppercase tracking-widest">
+                    Read Report <ArrowRight size={14} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 3. 百科视图 */}
+        {view === 'wiki' && (
+          <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+             <header className="mb-12">
+              <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase mb-4 inline-block">Knowledge Base</span>
+              <h1 className="text-4xl lg:text-5xl font-black text-white tracking-tighter uppercase italic">锡产业百科词条</h1>
+            </header>
+
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-1 space-y-2">
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4">词条分类</p>
+                {['基础知识', '定价机制', '下游应用', '环保政策'].map(t => (
+                  <button key={t} className="w-full text-left px-4 py-2 text-sm font-bold text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg transition-all">{t}</button>
+                ))}
+              </div>
+              <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+                 {['LME 升贴水', 'FOT 报价', '焊料应用', '半导体封测'].map(item => (
+                   <div key={item} className="bg-slate-900/30 border border-slate-800 p-6 rounded-2xl flex items-center justify-between group hover:bg-slate-900 transition-colors">
+                     <span className="font-bold text-slate-300">{item}</span>
+                     <ChevronRight size={16} className="text-slate-600 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+                   </div>
+                 ))}
+              </div>
+            </div>
           </div>
         )}
       </main>
