@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, TrendingDown, Zap, Home, Layers, BarChart3, BookOpen, 
   Database, Activity, Info, Calendar, FileText, HelpCircle, 
-  ChevronRight, ArrowRight, ExternalLink, Globe
+  ChevronRight, ArrowRight, ExternalLink, Globe, Search
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -38,6 +38,7 @@ const App = () => {
   const [latestReport, setLatestReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [showDebug, setShowDebug] = useState(false); // 调试模式开关
 
   // 1. 匿名登录
   useEffect(() => {
@@ -69,22 +70,27 @@ const App = () => {
           : raw.change_percent;
 
         /**
-         * 🛠 深度修复 Outlook 映射
-         * 遍历所有可能的字段名，防止由于 AI 输出键名微调导致的显示为空
+         * 🛠 终极修复：智能字段探测
+         * 1. 先找 outlook 开头的字段
+         * 2. 再找包含 outlook 的字段 (不分大小写)
+         * 3. 最后兜底 fallback
          */
-        const outlookContent = 
-          raw.outlook || 
-          raw.outlook_analysis || 
-          raw.outlookAnalysis || 
-          raw.outlook_text || 
-          raw.market_outlook || 
-          raw.analysis ||
-          "";
+        let outlookContent = "";
+        const allKeys = Object.keys(raw);
+        
+        // 寻找任何包含 "outlook" 且有值的字段
+        const smartKey = allKeys.find(k => k.toLowerCase().includes('outlook') && raw[k] !== null && raw[k] !== "");
+        
+        if (smartKey) {
+          outlookContent = raw[smartKey];
+        } else {
+          outlookContent = raw.analysis || raw.summary_detail || "";
+        }
 
         return { 
           id: doc.id, 
           ...raw,
-          outlook: outlookContent, // 统一导出为 outlook
+          outlook: outlookContent,
           lme_price_numeric: cleanPrice,
           change_percent_numeric: cleanPercent
         };
@@ -155,12 +161,20 @@ const App = () => {
           </button>
         </nav>
 
-        <div className="mt-auto bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50">
-          <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
-            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-            Connected
+        <div className="mt-auto space-y-4">
+           <button 
+            onClick={() => setShowDebug(!showDebug)}
+            className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-blue-500 transition-colors border border-slate-900 rounded-xl"
+          >
+            <Search size={12} /> {showDebug ? "Hide Debug" : "Inspect Data"}
+          </button>
+          <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50">
+            <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+              Connected
+            </div>
+            <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">{appId}</p>
           </div>
-          <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">{appId}</p>
         </div>
       </aside>
 
@@ -172,18 +186,33 @@ const App = () => {
           </div>
         )}
 
+        {/* 调试视图：显示原始数据的所有 Key */}
+        {showDebug && latestReport && (
+          <div className="mb-10 p-6 bg-slate-900 border border-blue-500/30 rounded-3xl animate-in fade-in zoom-in duration-300">
+            <h4 className="text-blue-500 font-black text-[10px] uppercase tracking-widest mb-4">Raw Data Inspector</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {Object.keys(latestReport).map(key => (
+                <div key={key} className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <p className="text-[10px] text-slate-500 font-mono mb-1">{key}</p>
+                  <p className="text-xs font-bold truncate text-slate-300">{String(latestReport[key])}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 1. 市场仪表盘视图 */}
         {view === 'market' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="mb-12 text-left">
               <div className="flex items-center gap-2 mb-4">
                 <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic shadow-lg shadow-blue-900/20">Market Live</span>
-                <span className="text-blue-500 font-mono text-xs font-bold ml-2">BATCH: {latestReport?.id}</span>
+                <span className="text-blue-500 font-mono text-xs font-bold ml-2 text-left">BATCH: {latestReport?.id}</span>
               </div>
               <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter uppercase italic text-left">精锡市场周度监测报告</h1>
               {latestReport && (
                 <div className="flex items-baseline gap-4 text-left">
-                  <div className="text-5xl font-mono font-black text-white tracking-tighter italic">${latestReport.lme_price}</div>
+                  <div className="text-5xl font-mono font-black text-white tracking-tighter italic text-left">${latestReport.lme_price}</div>
                   <div className={`text-xl font-bold ${isNegative(latestReport.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
                     {latestReport.change_percent}%
                   </div>
@@ -194,7 +223,7 @@ const App = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
               {/* 图表卡片 */}
               <div className="lg:col-span-2 bg-slate-950 border border-slate-800 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group text-left">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] -z-10" />
+                <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] -z-10 text-left" />
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic text-left">
                   <BarChart3 size={22} className="text-blue-500" /> LME 价格趋势波动
                 </h3>
@@ -236,7 +265,7 @@ const App = () => {
                   </div>
                   <h3 className="text-xl font-black text-white mb-6 tracking-tight uppercase italic text-left">AI 预测策略</h3>
                   <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line text-left">
-                    {latestReport?.outlook || latestReport?.outlook_analysis || "AI 正在对未来供需关系进行深度建模预测，请稍后刷新。"}
+                    {latestReport?.outlook || "AI 正在对未来供需关系进行深度建模预测，请稍后刷新。若此项为空，请检查数据库字段映射。"}
                   </p>
                 </div>
 
@@ -256,9 +285,9 @@ const App = () => {
                         </div>
                       ))
                     ) : (
-                      <div className="py-12 text-center">
+                      <div className="py-12 text-center text-left">
                         <Database className="mx-auto text-slate-800 mb-3" size={32} />
-                        <p className="text-slate-600 text-[10px] font-black uppercase tracking-[0.2em]">No Archived Data</p>
+                        <p className="text-slate-600 text-[10px] font-black uppercase tracking-[0.2em] text-center">No Archived Data</p>
                       </div>
                     )}
                   </div>
