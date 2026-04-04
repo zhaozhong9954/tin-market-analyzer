@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   TrendingUp, TrendingDown, Zap, Home, Layers, BarChart3, BookOpen, 
   Database, Activity, Info, Calendar, FileText, HelpCircle, 
-  ChevronRight, ArrowRight, Linkedin, Mail, Sparkles, MessageSquare, Volume2, Loader2, Send, X
+  ChevronRight, ArrowRight, Share2, Mail, Sparkles, MessageSquare, Volume2, Loader2, Send, X, AlertCircle, ShieldAlert
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -10,9 +10,12 @@ import {
 
 // --- Firebase 初始化 ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, doc } from 'firebase/firestore';
 
+/**
+ * 🛠️ Firebase 配置
+ */
 const firebaseConfig = {
   apiKey: "AIzaSyBtsRxUcSd_43pvPMrLNlR8vpJcuixusBo",
   authDomain: "tin-market-analyzer.firebaseapp.com",
@@ -25,6 +28,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+/**
+ * 重要：锁定 appId 路径
+ */
 const appId = "tin-market-analyzer";
 
 // --- Gemini API 服务配置 ---
@@ -39,10 +46,9 @@ const fetchWithRetry = async (url, options, retries = 5) => {
     } catch (e) {}
     await new Promise(res => setTimeout(res, Math.pow(2, i) * 1000));
   }
-  throw new Error("API 请求失败，请稍后重试。");
+  throw new Error("Gemini API 请求失败。");
 };
 
-// PCM16 to WAV 转换辅助函数
 const pcmToWav = (pcmData, sampleRate) => {
   const buffer = new ArrayBuffer(44 + pcmData.length);
   const view = new DataView(buffer);
@@ -75,7 +81,7 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // Gemini 相关状态
+  // Gemini 状态
   const [deepInsight, setDeepInsight] = useState("");
   const [insightLoading, setInsightLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -85,61 +91,83 @@ const App = () => {
   const [ttsLoading, setTtsLoading] = useState(false);
   const audioRef = useRef(null);
 
+  // 1. Firebase 认证
   useEffect(() => {
-    signInAnonymously(auth).catch(() => setErrorMsg("Auth Failed"));
-    return onAuthStateChanged(auth, setUser);
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        setErrorMsg(`认证错误: ${err.message}`);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
   }, []);
 
+  // 2. 获取数据
   useEffect(() => {
     if (!user) return;
+    setLoading(true);
+    setErrorMsg(null);
+    
     const reportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
+    
     const unsubscribe = onSnapshot(reportsCol, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const raw = doc.data();
-        const cleanPrice = parseFloat(String(raw.lme_price || "0").replace(/,/g, ''));
-        return { id: doc.id, ...raw, lme_price_numeric: cleanPrice };
+        const price = String(raw.lme_price || "0").replace(/,/g, '');
+        return { 
+          id: doc.id, 
+          ...raw, 
+          lme_price_numeric: parseFloat(price) 
+        };
       });
       const sorted = data.sort((a, b) => b.id.localeCompare(a.id));
       setReports(sorted);
       setLatestReport(sorted[0] || null);
       setLoading(false);
     }, (err) => {
-      setErrorMsg(err.message);
+      console.error("Firestore Error:", err);
+      setErrorMsg(`权限错误: 数据库拒绝了访问。请检查路径: artifacts/${appId}/...`);
       setLoading(false);
     });
     return () => unsubscribe();
   }, [user]);
 
-  // ✨ 功能：生成深度洞察
+  // ✨ Gemini 功能
   const generateDeepInsight = async () => {
     if (!latestReport) return;
     setInsightLoading(true);
     try {
-      const prompt = `基于以下锡市场周报数据提供深度的行业洞察：价格$${latestReport.lme_price}, 变动${latestReport.change_percent}%, 摘要: ${latestReport.summary}, 展望: ${latestReport.outlook}。请分点讨论对矿方、冶炼厂和下游消费方的具体影响。`;
+      const prompt = `分析锡价$${latestReport.lme_price}带来的行业影响：摘要为${latestReport.summary}。请给出深度解读。`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
-      setDeepInsight(result.candidates?.[0]?.content?.parts?.[0]?.text || "暂无解读。");
+      setDeepInsight(result.candidates?.[0]?.content?.parts?.[0]?.text || "解读生成失败。");
     } catch (e) {
-      console.error(e);
+      setErrorMsg("AI 分析失败。");
     } finally {
       setInsightLoading(false);
     }
   };
 
-  // ✨ 功能：TTS 播报报告
   const speakReport = async () => {
     if (!latestReport || ttsLoading) return;
     setTtsLoading(true);
     try {
-      const textToSpeak = `Say professionally in Chinese: 这里是本周锡市场核心摘要。${latestReport.summary}`;
+      const text = `Say in Chinese: 这里是本周锡市场报告。${latestReport.summary}`;
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: textToSpeak }] }],
+          contents: [{ parts: [{ text }] }],
           generationConfig: { 
             responseModalities: ["AUDIO"], 
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } 
@@ -165,16 +193,14 @@ const App = () => {
     }
   };
 
-  // ✨ 功能：智库对话
   const handleChat = async () => {
     if (!chatInput.trim() || chatLoading) return;
     const userMsg = { role: 'user', content: chatInput };
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput("");
     setChatLoading(true);
-
     try {
-      const systemPrompt = `你是一个资深的金属行业分析师。当前的锡市报告上下文是：${JSON.stringify(latestReport)}。请基于此回答用户的问题，并给出专业建议。`;
+      const systemPrompt = `分析师背景。当前锡市：${latestReport.summary}。`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,20 +209,22 @@ const App = () => {
           systemInstruction: { parts: [{ text: systemPrompt }] }
         })
       });
-      const aiResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，我无法回答这个问题。";
+      const aiResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || "AI 无法解析。";
       setChatMessages(prev => [...prev, { role: 'ai', content: aiResponse }]);
     } catch (e) {
-      console.error(e);
+      setErrorMsg("聊天连接失败。");
     } finally {
       setChatLoading(false);
     }
   };
 
-  if (loading && !latestReport) return (
-    <div className="min-h-screen bg-[#020617] flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading && !latestReport) {
+    return (
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-500" size={32} />
+      </div>
+    );
+  }
 
   const isNegative = (val) => parseFloat(String(val || "0").replace('%', '')) < 0;
 
@@ -207,57 +235,61 @@ const App = () => {
       {/* 侧边栏 */}
       <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800 hidden lg:flex flex-col p-8 z-20">
         <div className="flex items-center gap-3 mb-12">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
             <Layers className="text-white" size={24} />
           </div>
           <div className="flex flex-col">
-            <span className="text-lg font-black text-white leading-none tracking-tight">TIN-MARKET</span>
-            <span className="text-[10px] text-blue-500 font-black tracking-widest uppercase">AI Analytics</span>
+            <span className="text-lg font-black text-white leading-none">TIN-MARKET</span>
+            <span className="text-[10px] text-blue-500 font-black tracking-widest uppercase">Intelligence</span>
           </div>
         </div>
         
         <nav className="space-y-1">
-          {[
-            { id: 'market', icon: Home, label: '市场仪表盘' },
-            { id: 'quarterly', icon: Calendar, label: '季度分析' },
-            { id: 'wiki', icon: BookOpen, label: '锡业百科' }
-          ].map(item => (
-            <button 
-              key={item.id}
-              onClick={() => setView(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
-            >
-              <item.icon size={18} /> {item.label}
-            </button>
-          ))}
+          <button onClick={() => setView('market')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'market' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-900'}`}>
+            <Home size={18} /> 市场仪表盘
+          </button>
+          <button onClick={() => setView('quarterly')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-900'}`}>
+            <Calendar size={18} /> 季度分析
+          </button>
         </nav>
 
         <div className="mt-auto space-y-4">
-          <button 
-            onClick={() => setChatOpen(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600/10 border border-indigo-600/30 text-indigo-400 rounded-xl font-bold text-sm hover:bg-indigo-600/20 transition-all"
-          >
-            <MessageSquare size={16} /> ✨ 问问 AI 智库
+          <button onClick={() => setChatOpen(true)} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600/20 border border-indigo-600/30 text-indigo-400 rounded-xl font-bold text-sm hover:bg-indigo-600/30 transition-all">
+            <MessageSquare size={16} /> ✨ AI 智库
           </button>
-          
-          <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50">
-            <div className="flex items-center gap-2 text-emerald-500 text-[9px] font-black uppercase mb-1">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Live Cloud
+          <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50 text-[9px] font-mono text-slate-500">
+            <div className="flex items-center gap-2 text-emerald-500 font-black uppercase mb-1">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Live System
             </div>
-            <p className="text-slate-600 text-[9px] font-mono truncate uppercase">{appId}</p>
+            ID: {appId}
           </div>
         </div>
       </aside>
 
-      {/* 主内容 */}
+      {/* 主界面 */}
       <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto pb-24">
+        {errorMsg && (
+          <div className="mb-8 p-5 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-4 text-red-400 text-sm animate-in fade-in duration-500">
+            <ShieldAlert className="shrink-0 mt-0.5" size={20} />
+            <div>
+              <p className="font-bold mb-1">数据库访问受限 (Permission Denied)</p>
+              <p className="opacity-90 leading-relaxed mb-3">{errorMsg}</p>
+              <div className="bg-black/20 p-3 rounded-lg border border-red-500/10 text-xs leading-relaxed">
+                <strong>💡 解决方案：</strong>
+                <ul className="list-disc ml-4 mt-1 space-y-1">
+                  <li>请登录 Firebase Console，在 <b>Firestore {'->'} Rules</b> 中设置允许读取。</li>
+                  <li>确保规则包含对 <code>artifacts/{appId}/</code> 路径的 <code>read</code> 权限。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
         {view === 'market' && latestReport && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
               <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase italic">BATCH: {latestReport.id}</span>
-                </div>
+                <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase mb-4 inline-block tracking-widest italic shadow-lg shadow-blue-500/20">LIVE SYNC</span>
                 <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter uppercase italic">精锡市场周度监测报告</h1>
                 <div className="flex items-baseline gap-4">
                   <div className="text-5xl font-mono font-black text-white italic">${latestReport.lme_price}</div>
@@ -266,23 +298,15 @@ const App = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-3">
-                <button 
-                  onClick={speakReport}
-                  disabled={ttsLoading}
-                  className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all disabled:opacity-50"
-                >
-                  {ttsLoading ? <Loader2 className="animate-spin" size={18} /> : <Volume2 size={18} />}
-                  ✨ 播报报告
-                </button>
-              </div>
+              <button onClick={speakReport} disabled={ttsLoading} className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all disabled:opacity-50">
+                {ttsLoading ? <Loader2 className="animate-spin text-blue-500" size={18} /> : <Volume2 size={18} />} ✨ 播报报告
+              </button>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-8 text-left">
-                {/* 走势图 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
+              <div className="lg:col-span-2 space-y-8">
                 <div className="bg-slate-950 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic"><BarChart3 size={20} className="text-blue-500" /> LME 价格趋势</h3>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic"><BarChart3 size={20} className="text-blue-500" /> 价格波动趋势</h3>
                   <div className="h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={[...reports].reverse()}>
@@ -298,58 +322,45 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* AI 深度洞察入口 */}
                 <div className="bg-blue-600/10 border border-blue-600/20 p-8 rounded-[2.5rem] relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                      <Sparkles size={14} /> AI Deep Insight
-                    </h4>
-                    <button 
-                      onClick={generateDeepInsight}
-                      disabled={insightLoading}
-                      className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
-                    >
-                      {insightLoading ? <Loader2 className="animate-spin" size={14} /> : "✨ 点击生成深度解读"}
+                  <div className="flex items-center justify-between mb-6">
+                    <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2"><Sparkles size={14} /> AI Deep Insight</h4>
+                    <button onClick={generateDeepInsight} disabled={insightLoading} className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2 bg-blue-600/10 px-4 py-1.5 rounded-full border border-blue-600/20">
+                      {insightLoading ? <Loader2 className="animate-spin" size={14} /> : "✨ 生成深度解读"}
                     </button>
                   </div>
                   {deepInsight ? (
-                    <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-line animate-in fade-in duration-500">
-                      {deepInsight}
-                    </div>
+                    <div className="text-slate-300 text-[15px] leading-relaxed whitespace-pre-line animate-in fade-in duration-700 italic">{deepInsight}</div>
                   ) : (
-                    <p className="text-slate-500 text-sm italic">"{latestReport.summary}"</p>
+                    <p className="text-slate-500 text-sm italic leading-relaxed">"{latestReport.summary}"</p>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-blue-600/5 border border-blue-600/20 p-6 rounded-3xl">
-                    <div className="flex items-center gap-2 mb-4 text-blue-400 font-black text-xs uppercase"><Linkedin size={16}/> LinkedIn</div>
-                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-3">{latestReport.linkedin_text || "等待内容推送..."}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+                  <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-3xl group">
+                    <div className="flex items-center gap-2 mb-4 text-blue-400 font-black text-xs uppercase italic"><Share2 size={16}/> LinkedIn Draft</div>
+                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-4 group-hover:line-clamp-none transition-all">{latestReport.linkedin_text || "等待同步内容..."}</p>
                   </div>
-                  <div className="bg-indigo-600/5 border border-indigo-600/20 p-6 rounded-3xl">
-                    <div className="flex items-center gap-2 mb-4 text-indigo-400 font-black text-xs uppercase"><Mail size={16}/> Newsletter</div>
-                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-3">{latestReport.email_content || "Newsletter 已就绪..."}</p>
+                  <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-3xl group">
+                    <div className="flex items-center gap-2 mb-4 text-indigo-400 font-black text-xs uppercase italic"><Mail size={16}/> Newsletter</div>
+                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-4 group-hover:line-clamp-none transition-all">{latestReport.email_content || "草案准备中..."}</p>
                   </div>
                 </div>
               </div>
 
-              {/* 侧边分析 */}
               <div className="space-y-8">
-                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[2.5rem] shadow-xl shadow-blue-900/20">
-                  <Zap className="text-yellow-400 mb-4" fill="currentColor" />
+                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[2.5rem] shadow-2xl border border-blue-500/20">
+                  <Zap className="text-yellow-400 mb-4" fill="currentColor" size={24} />
                   <h3 className="text-xl font-black text-white mb-6 uppercase italic">AI 预测策略</h3>
-                  <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-90 whitespace-pre-line">
-                    {latestReport.outlook || "AI 正在生成市场深度预测..."}
-                  </p>
+                  <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line italic">{latestReport.outlook || "正在评估供需..."}</p>
                 </div>
-
-                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem] border-dashed">
-                  <h3 className="text-slate-500 font-black mb-6 uppercase text-xs tracking-widest">历史报告</h3>
+                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem] border-dashed text-center text-left">
+                  <h3 className="text-slate-500 font-black mb-6 uppercase text-[10px] tracking-widest">历史数据快照</h3>
                   <div className="space-y-4">
-                    {reports.slice(1, 5).map(r => (
-                      <div key={r.id} className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500 font-mono">{r.id}</span>
-                        <span className="text-white font-bold">${r.lme_price}</span>
+                    {reports.slice(1, 6).map(r => (
+                      <div key={r.id} className="flex justify-between items-center text-xs p-2 hover:bg-slate-800 rounded-lg transition-colors group">
+                        <span className="text-slate-500 font-mono group-hover:text-blue-400">{r.id}</span>
+                        <span className="text-white font-bold tracking-tighter">${r.lme_price}</span>
                       </div>
                     ))}
                   </div>
@@ -360,60 +371,27 @@ const App = () => {
         )}
       </main>
 
-      {/* ✨ AI 聊天抽屉 */}
+      {/* AI 智库 */}
       {chatOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setChatOpen(false)} />
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setChatOpen(false)} />
           <div className="relative w-full max-w-md bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
             <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                  <Sparkles size={18} className="text-white" />
-                </div>
-                <span className="font-bold">✨ 锡市 AI 智库</span>
-              </div>
-              <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-white">
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2 text-white font-bold tracking-tight"><Sparkles size={18} /> ✨ 锡市 AI 智库</div>
+              <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-white transition-colors"><X size={20} /></button>
             </div>
-            
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              <div className="p-4 bg-blue-600/10 border border-blue-600/20 rounded-2xl text-xs text-blue-400">
-                你可以询问关于本报告的细节，例如：“为什么库存增加了？”或“下游焊料需求前景如何？”
-              </div>
-              
               {chatMessages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
-                    {msg.content}
-                  </div>
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200 border border-slate-700 shadow-sm'}`}>{msg.content}</div>
                 </div>
               ))}
-              {chatLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-slate-800 p-4 rounded-2xl">
-                    <Loader2 className="animate-spin text-blue-500" size={18} />
-                  </div>
-                </div>
-              )}
+              {chatLoading && <div className="flex justify-start"><div className="bg-slate-800 p-4 rounded-2xl border border-slate-700"><Loader2 className="animate-spin text-blue-500" size={18} /></div></div>}
             </div>
-
             <div className="p-6 border-t border-slate-800 bg-slate-950">
               <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleChat()}
-                  placeholder="输入你的问题..."
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition-all"
-                />
-                <button 
-                  onClick={handleChat}
-                  className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all"
-                >
-                  <Send size={18} />
-                </button>
+                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleChat()} placeholder="咨询行业深度分析..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-600" />
+                <button onClick={handleChat} disabled={chatLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all disabled:opacity-50"><Send size={18} /></button>
               </div>
             </div>
           </div>
