@@ -1,29 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   TrendingUp, TrendingDown, Zap, Home, Layers, BarChart3, BookOpen, 
   Database, Activity, Info, Calendar, FileText, HelpCircle, 
-  ChevronRight, ArrowRight, ExternalLink, Globe, Search
+  ChevronRight, ArrowRight, Linkedin, Mail, Sparkles, MessageSquare, Volume2, Loader2, Send, X
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
-// --- 导入 Firebase SDK ---
+// --- Firebase 初始化 ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 
-/**
- * ✅ Firebase 配置
- */
 const firebaseConfig = {
   apiKey: "AIzaSyBtsRxUcSd_43pvPMrLNlR8vpJcuixusBo",
   authDomain: "tin-market-analyzer.firebaseapp.com",
   projectId: "tin-market-analyzer",
   storageBucket: "tin-market-analyzer.firebasestorage.app",
   messagingSenderId: "855081672383",
-  appId: "1:855081672383:web:ad6f551501b28268bf700a",
-  measurementId: "G-7TE0M3R7KB"
+  appId: "1:855081672383:web:ad6f551501b28268bf700a"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -31,324 +27,398 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = "tin-market-analyzer";
 
+// --- Gemini API 服务配置 ---
+const apiKey = ""; // 运行时环境会自动提供
+
+const fetchWithRetry = async (url, options, retries = 5) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) return await response.json();
+      if (response.status !== 429 && response.status < 500) break;
+    } catch (e) {}
+    await new Promise(res => setTimeout(res, Math.pow(2, i) * 1000));
+  }
+  throw new Error("API 请求失败，请稍后重试。");
+};
+
+// PCM16 to WAV 转换辅助函数
+const pcmToWav = (pcmData, sampleRate) => {
+  const buffer = new ArrayBuffer(44 + pcmData.length);
+  const view = new DataView(buffer);
+  const writeString = (offset, string) => {
+    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+  };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 32 + pcmData.length, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, pcmData.length, true);
+  const pcmBytes = new Uint8Array(pcmData);
+  for (let i = 0; i < pcmData.length; i++) view.setUint8(44 + i, pcmBytes[i]);
+  return new Blob([buffer], { type: 'audio/wav' });
+};
+
 const App = () => {
-  const [view, setView] = useState('market'); // 'market', 'quarterly', 'wiki'
+  const [view, setView] = useState('market'); 
   const [user, setUser] = useState(null);
   const [reports, setReports] = useState([]);
   const [latestReport, setLatestReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [showDebug, setShowDebug] = useState(false); // 调试模式开关
 
-  // 1. 匿名登录
+  // Gemini 相关状态
+  const [deepInsight, setDeepInsight] = useState("");
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const audioRef = useRef(null);
+
   useEffect(() => {
-    signInAnonymously(auth).catch(err => {
-      console.error("Auth error:", err);
-      setErrorMsg("身份验证失败，请确认 Firebase 后台已开启匿名登录。");
-    });
+    signInAnonymously(auth).catch(() => setErrorMsg("Auth Failed"));
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // 2. 监听数据并进行清洗
   useEffect(() => {
     if (!user) return;
-
     const reportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
-    
     const unsubscribe = onSnapshot(reportsCol, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const raw = doc.data();
-        
-        // 价格清洗 (字符串 -> 数字)
-        const cleanPrice = typeof raw.lme_price === 'string' 
-          ? parseFloat(raw.lme_price.replace(/,/g, '')) 
-          : raw.lme_price;
-
-        // 涨跌幅清洗
-        const cleanPercent = typeof raw.change_percent === 'string'
-          ? parseFloat(raw.change_percent.replace('%', ''))
-          : raw.change_percent;
-
-        /**
-         * 🛠 终极修复：智能字段探测
-         * 1. 先找 outlook 开头的字段
-         * 2. 再找包含 outlook 的字段 (不分大小写)
-         * 3. 最后兜底 fallback
-         */
-        let outlookContent = "";
-        const allKeys = Object.keys(raw);
-        
-        // 寻找任何包含 "outlook" 且有值的字段
-        const smartKey = allKeys.find(k => k.toLowerCase().includes('outlook') && raw[k] !== null && raw[k] !== "");
-        
-        if (smartKey) {
-          outlookContent = raw[smartKey];
-        } else {
-          outlookContent = raw.analysis || raw.summary_detail || "";
-        }
-
-        return { 
-          id: doc.id, 
-          ...raw,
-          outlook: outlookContent,
-          lme_price_numeric: cleanPrice,
-          change_percent_numeric: cleanPercent
-        };
+        const cleanPrice = parseFloat(String(raw.lme_price || "0").replace(/,/g, ''));
+        return { id: doc.id, ...raw, lme_price_numeric: cleanPrice };
       });
-      
-      const sortedData = data.sort((a, b) => b.id.localeCompare(a.id));
-      setReports(sortedData);
-      setLatestReport(sortedData[0] || null);
+      const sorted = data.sort((a, b) => b.id.localeCompare(a.id));
+      setReports(sorted);
+      setLatestReport(sorted[0] || null);
       setLoading(false);
-    }, (error) => {
-      console.error("Firestore error:", error);
-      setErrorMsg("获取数据失败，请检查数据库权限。");
+    }, (err) => {
+      setErrorMsg(err.message);
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [user]);
 
-  // 渲染助手：颜色判断
-  const isNegative = (val) => {
-    const num = parseFloat(String(val).replace('%', ''));
-    return num < 0;
+  // ✨ 功能：生成深度洞察
+  const generateDeepInsight = async () => {
+    if (!latestReport) return;
+    setInsightLoading(true);
+    try {
+      const prompt = `基于以下锡市场周报数据提供深度的行业洞察：价格$${latestReport.lme_price}, 变动${latestReport.change_percent}%, 摘要: ${latestReport.summary}, 展望: ${latestReport.outlook}。请分点讨论对矿方、冶炼厂和下游消费方的具体影响。`;
+      const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      setDeepInsight(result.candidates?.[0]?.content?.parts?.[0]?.text || "暂无解读。");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setInsightLoading(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-blue-500 font-black tracking-widest text-[10px] uppercase animate-pulse">Syncing Data...</p>
-        </div>
-      </div>
-    );
-  }
+  // ✨ 功能：TTS 播报报告
+  const speakReport = async () => {
+    if (!latestReport || ttsLoading) return;
+    setTtsLoading(true);
+    try {
+      const textToSpeak = `Say professionally in Chinese: 这里是本周锡市场核心摘要。${latestReport.summary}`;
+      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: textToSpeak }] }],
+          generationConfig: { 
+            responseModalities: ["AUDIO"], 
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } 
+          }
+        })
+      });
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const binaryString = window.atob(base64Audio);
+        const pcmData = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) pcmData[i] = binaryString.charCodeAt(i);
+        const wavBlob = pcmToWav(pcmData, 24000);
+        const audioUrl = URL.createObjectURL(wavBlob);
+        if (audioRef.current) {
+          audioRef.current.src = audioUrl;
+          audioRef.current.play();
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTtsLoading(false);
+    }
+  };
+
+  // ✨ 功能：智库对话
+  const handleChat = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg = { role: 'user', content: chatInput };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const systemPrompt = `你是一个资深的金属行业分析师。当前的锡市报告上下文是：${JSON.stringify(latestReport)}。请基于此回答用户的问题，并给出专业建议。`;
+      const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          contents: [{ parts: [{ text: chatInput }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] }
+        })
+      });
+      const aiResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，我无法回答这个问题。";
+      setChatMessages(prev => [...prev, { role: 'ai', content: aiResponse }]);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  if (loading && !latestReport) return (
+    <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  const isNegative = (val) => parseFloat(String(val || "0").replace('%', '')) < 0;
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans text-left selection:bg-blue-500/30">
+    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans text-left relative overflow-x-hidden">
+      <audio ref={audioRef} className="hidden" />
+      
       {/* 侧边栏 */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800 hidden lg:flex flex-col p-8 text-left z-20">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+      <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800 hidden lg:flex flex-col p-8 z-20">
+        <div className="flex items-center gap-3 mb-12">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
             <Layers className="text-white" size={24} />
           </div>
-          <div className="flex flex-col text-left">
-            <span className="text-lg font-black text-white leading-none tracking-tighter uppercase">Tin Market</span>
-            <span className="text-[10px] text-blue-500 font-black tracking-[0.2em] uppercase">Control Center</span>
+          <div className="flex flex-col">
+            <span className="text-lg font-black text-white leading-none tracking-tight">TIN-MARKET</span>
+            <span className="text-[10px] text-blue-500 font-black tracking-widest uppercase">AI Analytics</span>
           </div>
         </div>
         
-        <nav className="space-y-2 flex-1">
-          <button 
-            onClick={() => setView('market')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'market' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
-          >
-            <Home size={18} /> 市场仪表盘
-          </button>
-          <button 
-            onClick={() => setView('quarterly')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
-          >
-            <Calendar size={18} /> 季度深度报告
-          </button>
-          <button 
-            onClick={() => setView('wiki')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'wiki' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
-          >
-            <BookOpen size={18} /> 锡业百科
-          </button>
+        <nav className="space-y-1">
+          {[
+            { id: 'market', icon: Home, label: '市场仪表盘' },
+            { id: 'quarterly', icon: Calendar, label: '季度分析' },
+            { id: 'wiki', icon: BookOpen, label: '锡业百科' }
+          ].map(item => (
+            <button 
+              key={item.id}
+              onClick={() => setView(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}
+            >
+              <item.icon size={18} /> {item.label}
+            </button>
+          ))}
         </nav>
 
         <div className="mt-auto space-y-4">
-           <button 
-            onClick={() => setShowDebug(!showDebug)}
-            className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-blue-500 transition-colors border border-slate-900 rounded-xl"
+          <button 
+            onClick={() => setChatOpen(true)}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600/10 border border-indigo-600/30 text-indigo-400 rounded-xl font-bold text-sm hover:bg-indigo-600/20 transition-all"
           >
-            <Search size={12} /> {showDebug ? "Hide Debug" : "Inspect Data"}
+            <MessageSquare size={16} /> ✨ 问问 AI 智库
           </button>
+          
           <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50">
-            <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              Connected
+            <div className="flex items-center gap-2 text-emerald-500 text-[9px] font-black uppercase mb-1">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Live Cloud
             </div>
-            <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">{appId}</p>
+            <p className="text-slate-600 text-[9px] font-mono truncate uppercase">{appId}</p>
           </div>
         </div>
       </aside>
 
-      {/* 主界面 */}
-      <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto text-left">
-        {errorMsg && (
-          <div className="mb-8 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-400 text-sm">
-            <Info size={18} /> {String(errorMsg)}
-          </div>
-        )}
-
-        {/* 调试视图：显示原始数据的所有 Key */}
-        {showDebug && latestReport && (
-          <div className="mb-10 p-6 bg-slate-900 border border-blue-500/30 rounded-3xl animate-in fade-in zoom-in duration-300">
-            <h4 className="text-blue-500 font-black text-[10px] uppercase tracking-widest mb-4">Raw Data Inspector</h4>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {Object.keys(latestReport).map(key => (
-                <div key={key} className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  <p className="text-[10px] text-slate-500 font-mono mb-1">{key}</p>
-                  <p className="text-xs font-bold truncate text-slate-300">{String(latestReport[key])}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 1. 市场仪表盘视图 */}
-        {view === 'market' && (
+      {/* 主内容 */}
+      <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto pb-24">
+        {view === 'market' && latestReport && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <header className="mb-12 text-left">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic shadow-lg shadow-blue-900/20">Market Live</span>
-                <span className="text-blue-500 font-mono text-xs font-bold ml-2 text-left">BATCH: {latestReport?.id}</span>
-              </div>
-              <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter uppercase italic text-left">精锡市场周度监测报告</h1>
-              {latestReport && (
-                <div className="flex items-baseline gap-4 text-left">
-                  <div className="text-5xl font-mono font-black text-white tracking-tighter italic text-left">${latestReport.lme_price}</div>
+            <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase italic">BATCH: {latestReport.id}</span>
+                </div>
+                <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter uppercase italic">精锡市场周度监测报告</h1>
+                <div className="flex items-baseline gap-4">
+                  <div className="text-5xl font-mono font-black text-white italic">${latestReport.lme_price}</div>
                   <div className={`text-xl font-bold ${isNegative(latestReport.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
                     {latestReport.change_percent}%
                   </div>
                 </div>
-              )}
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={speakReport}
+                  disabled={ttsLoading}
+                  className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all disabled:opacity-50"
+                >
+                  {ttsLoading ? <Loader2 className="animate-spin" size={18} /> : <Volume2 size={18} />}
+                  ✨ 播报报告
+                </button>
+              </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
-              {/* 图表卡片 */}
-              <div className="lg:col-span-2 bg-slate-950 border border-slate-800 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group text-left">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] -z-10 text-left" />
-                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic text-left">
-                  <BarChart3 size={22} className="text-blue-500" /> LME 价格趋势波动
-                </h3>
-                
-                <div className="h-[300px] w-full text-left">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={[...reports].reverse()}>
-                      <defs>
-                        <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                      <XAxis dataKey="id" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} dy={10} />
-                      <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} domain={['auto', 'auto']} hide />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#020617', border: '1px solid #1e293b', borderRadius: '16px', fontSize: '12px' }}
-                        itemStyle={{ color: '#3b82f6', fontWeight: 'bold' }}
-                      />
-                      <Area type="monotone" dataKey="lme_price_numeric" stroke="#3b82f6" strokeWidth={5} fill="url(#chartGrad)" animationDuration={1500} />
-                    </AreaChart>
-                  </ResponsiveContainer>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-8 text-left">
+                {/* 走势图 */}
+                <div className="bg-slate-950 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic"><BarChart3 size={20} className="text-blue-500" /> LME 价格趋势</h3>
+                  <div className="h-[280px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={[...reports].reverse()}>
+                        <defs>
+                          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                        <XAxis dataKey="id" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                        <Tooltip contentStyle={{ backgroundColor: '#020617', border: '1px solid #1e293b', borderRadius: '12px' }} />
+                        <Area type="monotone" dataKey="lme_price_numeric" stroke="#3b82f6" strokeWidth={4} fill="url(#g)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
 
-                <div className="mt-10 p-8 bg-blue-900/10 border border-blue-500/20 rounded-[2rem] text-left">
-                  <h4 className="text-[10px] font-black text-blue-400 mb-3 uppercase tracking-[0.3em] text-left">本周核心摘要</h4>
-                  <p className="text-slate-200 leading-relaxed text-sm italic font-medium text-left">
-                    "{latestReport?.summary || "正在同步最新的市场概览内容..."}"
-                  </p>
+                {/* AI 深度洞察入口 */}
+                <div className="bg-blue-600/10 border border-blue-600/20 p-8 rounded-[2.5rem] relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                      <Sparkles size={14} /> AI Deep Insight
+                    </h4>
+                    <button 
+                      onClick={generateDeepInsight}
+                      disabled={insightLoading}
+                      className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+                    >
+                      {insightLoading ? <Loader2 className="animate-spin" size={14} /> : "✨ 点击生成深度解读"}
+                    </button>
+                  </div>
+                  {deepInsight ? (
+                    <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-line animate-in fade-in duration-500">
+                      {deepInsight}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 text-sm italic">"{latestReport.summary}"</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-blue-600/5 border border-blue-600/20 p-6 rounded-3xl">
+                    <div className="flex items-center gap-2 mb-4 text-blue-400 font-black text-xs uppercase"><Linkedin size={16}/> LinkedIn</div>
+                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-3">{latestReport.linkedin_text || "等待内容推送..."}</p>
+                  </div>
+                  <div className="bg-indigo-600/5 border border-indigo-600/20 p-6 rounded-3xl">
+                    <div className="flex items-center gap-2 mb-4 text-indigo-400 font-black text-xs uppercase"><Mail size={16}/> Newsletter</div>
+                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-3">{latestReport.email_content || "Newsletter 已就绪..."}</p>
+                  </div>
                 </div>
               </div>
 
               {/* 侧边分析 */}
-              <div className="space-y-8 text-left">
-                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[3rem] shadow-xl shadow-blue-900/20 relative overflow-hidden group text-left">
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                    <Zap size={64} fill="white" />
-                  </div>
-                  <h3 className="text-xl font-black text-white mb-6 tracking-tight uppercase italic text-left">AI 预测策略</h3>
-                  <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line text-left">
-                    {latestReport?.outlook || "AI 正在对未来供需关系进行深度建模预测，请稍后刷新。若此项为空，请检查数据库字段映射。"}
+              <div className="space-y-8">
+                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[2.5rem] shadow-xl shadow-blue-900/20">
+                  <Zap className="text-yellow-400 mb-4" fill="currentColor" />
+                  <h3 className="text-xl font-black text-white mb-6 uppercase italic">AI 预测策略</h3>
+                  <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-90 whitespace-pre-line">
+                    {latestReport.outlook || "AI 正在生成市场深度预测..."}
                   </p>
                 </div>
 
-                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[3rem] border-dashed text-left">
-                  <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-sm tracking-widest text-slate-400 text-left">往期报告存档</h3>
-                  <div className="space-y-4 text-left">
-                    {reports.length > 1 ? (
-                      reports.slice(1, 6).map((r, idx) => (
-                        <div key={idx} className="flex items-center justify-between group cursor-pointer text-left">
-                          <div className="flex flex-col text-left">
-                            <span className="text-[10px] text-slate-500 font-mono tracking-tighter uppercase text-left">{r.id}</span>
-                            <span className="text-sm font-bold text-slate-300 group-hover:text-blue-400 transition-colors tracking-tight text-left">${r.lme_price}</span>
-                          </div>
-                          <div className={`text-[10px] font-black ${isNegative(r.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
-                            {r.change_percent}%
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="py-12 text-center text-left">
-                        <Database className="mx-auto text-slate-800 mb-3" size={32} />
-                        <p className="text-slate-600 text-[10px] font-black uppercase tracking-[0.2em] text-center">No Archived Data</p>
+                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem] border-dashed">
+                  <h3 className="text-slate-500 font-black mb-6 uppercase text-xs tracking-widest">历史报告</h3>
+                  <div className="space-y-4">
+                    {reports.slice(1, 5).map(r => (
+                      <div key={r.id} className="flex justify-between items-center text-xs">
+                        <span className="text-slate-500 font-mono">{r.id}</span>
+                        <span className="text-white font-bold">${r.lme_price}</span>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 2. 季度报告视图 */}
-        {view === 'quarterly' && (
-          <div className="animate-in fade-in slide-in-from-left-4 duration-500 text-left">
-            <header className="mb-12 text-left">
-              <span className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase mb-4 inline-block shadow-lg shadow-indigo-900/20">Deep Analysis</span>
-              <h1 className="text-4xl lg:text-5xl font-black text-white tracking-tighter uppercase italic text-left">季度锡产业深度展望</h1>
-            </header>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
-              {[1, 2].map(i => (
-                <div key={i} className="bg-slate-900/50 border border-slate-800 p-8 rounded-[3rem] group hover:border-blue-600/50 transition-all cursor-pointer text-left">
-                  <div className="w-12 h-12 bg-indigo-600/20 rounded-2xl flex items-center justify-center mb-6 text-indigo-400 group-hover:scale-110 transition-transform">
-                    <FileText size={24} />
-                  </div>
-                  <h3 className="text-xl font-black text-white mb-3 text-left">2026 Q{i} 锡精矿供应缺口分析</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed mb-6 text-left">针对主要生产国（缅甸、印尼、刚果金）的最新进出口数据及矿山复产进度的深度垂直报告...</p>
-                  <div className="flex items-center gap-2 text-blue-500 font-black text-[10px] uppercase tracking-widest text-left">
-                    Read Report <ArrowRight size={14} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 3. 百科视图 */}
-        {view === 'wiki' && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-500 text-left">
-             <header className="mb-12 text-left">
-              <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase mb-4 inline-block shadow-lg shadow-emerald-900/20">Knowledge Base</span>
-              <h1 className="text-4xl lg:text-5xl font-black text-white tracking-tighter uppercase italic text-left">锡产业百科词条</h1>
-            </header>
-
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 text-left">
-              <div className="lg:col-span-1 space-y-2 text-left">
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4 text-left">词条分类</p>
-                {['基础知识', '定价机制', '下游应用', '环保政策'].map(t => (
-                  <button key={t} className="w-full text-left px-4 py-2 text-sm font-bold text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg transition-all">{t}</button>
-                ))}
-              </div>
-              <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-                 {['LME 升贴水', 'FOT 报价', '焊料应用', '半导体封测'].map(item => (
-                   <div key={item} className="bg-slate-900/30 border border-slate-800 p-6 rounded-2xl flex items-center justify-between group hover:bg-slate-900 transition-colors cursor-pointer text-left">
-                     <span className="font-bold text-slate-300 text-left">{item}</span>
-                     <ChevronRight size={16} className="text-slate-600 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-                   </div>
-                 ))}
               </div>
             </div>
           </div>
         )}
       </main>
+
+      {/* ✨ AI 聊天抽屉 */}
+      {chatOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setChatOpen(false)} />
+          <div className="relative w-full max-w-md bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                  <Sparkles size={18} className="text-white" />
+                </div>
+                <span className="font-bold">✨ 锡市 AI 智库</span>
+              </div>
+              <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="p-4 bg-blue-600/10 border border-blue-600/20 rounded-2xl text-xs text-blue-400">
+                你可以询问关于本报告的细节，例如：“为什么库存增加了？”或“下游焊料需求前景如何？”
+              </div>
+              
+              {chatMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-800 p-4 rounded-2xl">
+                    <Loader2 className="animate-spin text-blue-500" size={18} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-slate-800 bg-slate-950">
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleChat()}
+                  placeholder="输入你的问题..."
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition-all"
+                />
+                <button 
+                  onClick={handleChat}
+                  className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all"
+                >
+                  <Send size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
