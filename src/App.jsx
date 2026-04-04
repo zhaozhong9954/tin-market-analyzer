@@ -109,7 +109,7 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. 获取数据
+  // 2. 获取数据并进行多字段智能映射
   useEffect(() => {
     if (!user) return;
     setLoading(true);
@@ -120,11 +120,24 @@ const App = () => {
     const unsubscribe = onSnapshot(reportsCol, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const raw = doc.data();
-        const price = String(raw.lme_price || "0").replace(/,/g, '');
+        
+        // 🛠️ 智能字段映射：解决 outlook_analysis 引用问题
+        // 尝试从 outlook, outlook_analysis 或 market_outlook 提取内容
+        const outlookText = raw.outlook || raw.outlook_analysis || raw.market_outlook || "";
+        
+        // 同样处理社交媒体内容
+        const linkedinText = raw.linkedin_text || raw.linkedin || raw.social_media_post || "";
+        const emailContent = raw.email_content || raw.email || raw.newsletter || "";
+
+        const priceStr = String(raw.lme_price || "0").replace(/,/g, '');
+        
         return { 
           id: doc.id, 
           ...raw, 
-          lme_price_numeric: parseFloat(price) 
+          outlook: outlookText,
+          linkedin_text: linkedinText,
+          email_content: emailContent,
+          lme_price_numeric: parseFloat(priceStr) 
         };
       });
       const sorted = data.sort((a, b) => b.id.localeCompare(a.id));
@@ -238,7 +251,7 @@ const App = () => {
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
             <Layers className="text-white" size={24} />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col text-left">
             <span className="text-lg font-black text-white leading-none">TIN-MARKET</span>
             <span className="text-[10px] text-blue-500 font-black tracking-widest uppercase">Intelligence</span>
           </div>
@@ -267,18 +280,17 @@ const App = () => {
       </aside>
 
       {/* 主界面 */}
-      <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto pb-24">
+      <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto pb-24 text-left">
         {errorMsg && (
           <div className="mb-8 p-5 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-4 text-red-400 text-sm animate-in fade-in duration-500">
             <ShieldAlert className="shrink-0 mt-0.5" size={20} />
             <div>
-              <p className="font-bold mb-1">数据库访问受限 (Permission Denied)</p>
-              <p className="opacity-90 leading-relaxed mb-3">{errorMsg}</p>
-              <div className="bg-black/20 p-3 rounded-lg border border-red-500/10 text-xs leading-relaxed">
+              <p className="font-bold mb-1 text-left">数据库访问受限 (Permission Denied)</p>
+              <p className="opacity-90 leading-relaxed mb-3 text-left">{errorMsg}</p>
+              <div className="bg-black/20 p-3 rounded-lg border border-red-500/10 text-xs leading-relaxed text-left">
                 <strong>💡 解决方案：</strong>
                 <ul className="list-disc ml-4 mt-1 space-y-1">
-                  <li>请登录 Firebase Console，在 <b>Firestore {'->'} Rules</b> 中设置允许读取。</li>
-                  <li>确保规则包含对 <code>artifacts/{appId}/</code> 路径的 <code>read</code> 权限。</li>
+                  <li>请确认 Firebase Console 的 Rules 允许读取 <code>artifacts/{appId}/</code></li>
                 </ul>
               </div>
             </div>
@@ -287,12 +299,12 @@ const App = () => {
 
         {view === 'market' && latestReport && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+            <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 text-left">
               <div>
                 <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase mb-4 inline-block tracking-widest italic shadow-lg shadow-blue-500/20">LIVE SYNC</span>
-                <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter uppercase italic">精锡市场周度监测报告</h1>
-                <div className="flex items-baseline gap-4">
-                  <div className="text-5xl font-mono font-black text-white italic">${latestReport.lme_price}</div>
+                <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter uppercase italic text-left">精锡市场周度监测报告</h1>
+                <div className="flex items-baseline gap-4 text-left">
+                  <div className="text-5xl font-mono font-black text-white italic text-left">${latestReport.lme_price}</div>
                   <div className={`text-xl font-bold ${isNegative(latestReport.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
                     {latestReport.change_percent}%
                   </div>
@@ -306,7 +318,7 @@ const App = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
               <div className="lg:col-span-2 space-y-8">
                 <div className="bg-slate-950 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic"><BarChart3 size={20} className="text-blue-500" /> 价格波动趋势</h3>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic text-left"><BarChart3 size={20} className="text-blue-500" /> 价格波动趋势</h3>
                   <div className="h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={[...reports].reverse()}>
@@ -322,7 +334,7 @@ const App = () => {
                   </div>
                 </div>
 
-                <div className="bg-blue-600/10 border border-blue-600/20 p-8 rounded-[2.5rem] relative overflow-hidden">
+                <div className="bg-blue-600/10 border border-blue-600/20 p-8 rounded-[2.5rem] relative overflow-hidden text-left">
                   <div className="flex items-center justify-between mb-6">
                     <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2"><Sparkles size={14} /> AI Deep Insight</h4>
                     <button onClick={generateDeepInsight} disabled={insightLoading} className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2 bg-blue-600/10 px-4 py-1.5 rounded-full border border-blue-600/20">
@@ -330,32 +342,34 @@ const App = () => {
                     </button>
                   </div>
                   {deepInsight ? (
-                    <div className="text-slate-300 text-[15px] leading-relaxed whitespace-pre-line animate-in fade-in duration-700 italic">{deepInsight}</div>
+                    <div className="text-slate-300 text-[15px] leading-relaxed whitespace-pre-line animate-in fade-in duration-700 italic text-left">{deepInsight}</div>
                   ) : (
-                    <p className="text-slate-500 text-sm italic leading-relaxed">"{latestReport.summary}"</p>
+                    <p className="text-slate-500 text-sm italic leading-relaxed text-left">"{latestReport.summary}"</p>
                   )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
                   <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-3xl group">
-                    <div className="flex items-center gap-2 mb-4 text-blue-400 font-black text-xs uppercase italic"><Share2 size={16}/> LinkedIn Draft</div>
-                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-4 group-hover:line-clamp-none transition-all">{latestReport.linkedin_text || "等待同步内容..."}</p>
+                    <div className="flex items-center gap-2 mb-4 text-blue-400 font-black text-xs uppercase italic text-left"><Share2 size={16}/> LinkedIn Draft</div>
+                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-4 group-hover:line-clamp-none transition-all text-left">{latestReport.linkedin_text || "等待同步内容..."}</p>
                   </div>
                   <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-3xl group">
-                    <div className="flex items-center gap-2 mb-4 text-indigo-400 font-black text-xs uppercase italic"><Mail size={16}/> Newsletter</div>
-                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-4 group-hover:line-clamp-none transition-all">{latestReport.email_content || "草案准备中..."}</p>
+                    <div className="flex items-center gap-2 mb-4 text-indigo-400 font-black text-xs uppercase italic text-left"><Mail size={16}/> Newsletter</div>
+                    <p className="text-slate-400 text-xs leading-relaxed italic line-clamp-4 group-hover:line-clamp-none transition-all text-left">{latestReport.email_content || "草案准备中..."}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-8">
+              <div className="space-y-8 text-left">
                 <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[2.5rem] shadow-2xl border border-blue-500/20">
-                  <Zap className="text-yellow-400 mb-4" fill="currentColor" size={24} />
-                  <h3 className="text-xl font-black text-white mb-6 uppercase italic">AI 预测策略</h3>
-                  <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line italic">{latestReport.outlook || "正在评估供需..."}</p>
+                  <Zap className="text-yellow-400 mb-4 text-left" fill="currentColor" size={24} />
+                  <h3 className="text-xl font-black text-white mb-6 uppercase italic text-left">AI 预测策略</h3>
+                  <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line italic text-left">
+                    {latestReport.outlook || "AI 正在评估未来趋势，请稍后刷新。"}
+                  </p>
                 </div>
-                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem] border-dashed text-center text-left">
-                  <h3 className="text-slate-500 font-black mb-6 uppercase text-[10px] tracking-widest">历史数据快照</h3>
+                <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem] border-dashed text-left">
+                  <h3 className="text-slate-500 font-black mb-6 uppercase text-[10px] tracking-widest text-left">历史数据快照</h3>
                   <div className="space-y-4">
                     {reports.slice(1, 6).map(r => (
                       <div key={r.id} className="flex justify-between items-center text-xs p-2 hover:bg-slate-800 rounded-lg transition-colors group">
