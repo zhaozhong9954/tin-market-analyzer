@@ -137,10 +137,16 @@ const App = () => {
     if (!user) return;
     const qReportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'quarterly_reports');
     const unsubscribe = onSnapshot(qReportsCol, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const data = snapshot.docs.map(doc => {
+        const raw = doc.data();
+        return {
+          id: doc.id,
+          // 智能映射：适配 title, summary, content 字段
+          title: raw.title || doc.id,
+          content: raw.summary || raw.content || "报告内容同步中...",
+          ...raw
+        };
+      });
       setQuarterlyReports(data.sort((a, b) => b.id.localeCompare(a.id)));
     }, (err) => {
       console.error("Quarterly fetch error:", err);
@@ -177,7 +183,7 @@ const App = () => {
         body: JSON.stringify({
           contents: [{ parts: [{ text }] }],
           generationConfig: { 
-            responseModalities: ["AUDIO"], 
+            responseModalalities: ["AUDIO"], 
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } 
           }
         })
@@ -368,13 +374,13 @@ const App = () => {
                 <div key={q.id} className="bg-slate-900/50 border border-slate-800 p-8 rounded-[3rem] hover:border-blue-600 transition-all text-left group">
                   <div className="flex items-center gap-4 mb-6">
                     <div className="w-12 h-12 bg-blue-600/20 rounded-2xl flex items-center justify-center text-blue-500"><FileText /></div>
-                    <h3 className="text-2xl font-black text-white uppercase italic text-left">{q.id} 全球供需平衡报告</h3>
+                    <h3 className="text-2xl font-black text-white uppercase italic text-left">{q.title}</h3>
                   </div>
                   <div className="text-slate-300 leading-relaxed whitespace-pre-line text-[15px] italic mb-6 text-left">
-                    {q.content || "内容正在同步中..."}
+                    {q.content}
                   </div>
                   <div className="flex gap-3 text-left">
-                    <span className="text-[10px] font-black bg-slate-800 px-3 py-1 rounded-full text-slate-500 uppercase">NotebookLM</span>
+                    <span className="text-[10px] font-black bg-slate-800 px-3 py-1 rounded-full text-slate-500 uppercase">ID: {q.id}</span>
                     <span className="text-[10px] font-black bg-blue-600/20 px-3 py-1 rounded-full text-blue-400 uppercase italic">Macro Review</span>
                   </div>
                 </div>
@@ -439,6 +445,9 @@ const App = () => {
       )}
     </div>
   );
+};
+
+export default App;
 };
 
 export default App;
