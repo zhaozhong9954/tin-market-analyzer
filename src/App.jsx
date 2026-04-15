@@ -320,7 +320,7 @@ const App = () => {
             <Home size={18} /> 市场仪表盘
           </button>
           <button onClick={() => setView('quarterly')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}>
-            <Calendar size={18} /> 季度分析报告
+            <Calendar size={18} /> 分析报告
           </button>
         </nav>
 
@@ -437,7 +437,7 @@ const App = () => {
 
         {view === 'quarterly' && (
           <div className="animate-in fade-in slide-in-from-left-4 duration-500 text-left">
-            <h1 className="text-4xl lg:text-5xl font-black text-white mb-10 tracking-tighter uppercase italic text-left">季度深度分析存档</h1>
+            <h1 className="text-4xl lg:text-5xl font-black text-white mb-10 tracking-tighter uppercase italic text-left">深度分析报告</h1>
             <div className="grid grid-cols-1 gap-12 text-left">
               {quarterlyReports.length > 0 ? quarterlyReports.map(q => (
                 <QuarterlyCard key={q.id} q={q} formatContent={formatContent} />
