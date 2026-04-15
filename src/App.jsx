@@ -33,7 +33,7 @@ const db = getFirestore(app);
 const appId = "tin-market-analyzer";
 
 // --- Gemini API 服务配置 ---
-const apiKey = ""; // 运行时环境自动提供
+const apiKey = ""; 
 
 const fetchWithRetry = async (url, options, retries = 5) => {
   for (let i = 0; i < retries; i++) {
@@ -79,7 +79,6 @@ const App = () => {
   const [latestReport, setLatestReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [showDebug, setShowDebug] = useState(false);
 
   const [deepInsight, setDeepInsight] = useState("");
   const [insightLoading, setInsightLoading] = useState(false);
@@ -90,21 +89,19 @@ const App = () => {
   const [ttsLoading, setTtsLoading] = useState(false);
   const audioRef = useRef(null);
 
+  // 1. 匿名登录
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       if (u) {
         setUser(u);
       } else {
-        signInAnonymously(auth).catch(err => {
-          console.error("Auth error:", err);
-          setErrorMsg("身份验证失败，请确认 Firebase 后台已开启匿名登录。");
-        });
+        signInAnonymously(auth).catch(err => setErrorMsg("登录失败"));
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // 1. 周报监听
+  // 2. 周报监听
   useEffect(() => {
     if (!user) return;
     const reportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
@@ -126,13 +123,12 @@ const App = () => {
       setLatestReport(sortedData[0] || null);
       setLoading(false);
     }, (error) => {
-      setErrorMsg("周报数据读取受限。");
-      setLoading(false);
+      if (reports.length === 0) setErrorMsg("数据同步受限，请确认 Firestore 规则。");
     });
     return () => unsubscribe();
   }, [user]);
 
-  // 2. 季度报告监听 (NotebookLM)
+  // 3. 季度报告监听
   useEffect(() => {
     if (!user) return;
     const qReportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'quarterly_reports');
@@ -141,24 +137,30 @@ const App = () => {
         const raw = doc.data();
         return {
           id: doc.id,
-          // 智能映射：适配 title, summary, content 字段
           title: raw.title || doc.id,
-          content: raw.summary || raw.content || "报告内容同步中...",
+          content: raw.summary || raw.content || "",
           ...raw
         };
       });
       setQuarterlyReports(data.sort((a, b) => b.id.localeCompare(a.id)));
-    }, (err) => {
-      console.error("Quarterly fetch error:", err);
     });
     return () => unsubscribe();
   }, [user]);
+
+  // --- 排版助手：修复多余换行导致的标点孤行问题 ---
+  const formatContent = (text) => {
+    if (!text) return "";
+    return text
+      .replace(/\n\s*[。|·|•]\s*\n/g, '\n• ') // 将孤立的符号转为行首列表项
+      .replace(/\n\n+/g, '\n\n') // 压缩过多的空白行
+      .trim();
+  };
 
   const generateDeepInsight = async () => {
     if (!latestReport) return;
     setInsightLoading(true);
     try {
-      const prompt = `分析锡价$${latestReport.lme_price}的影响：${latestReport.summary}。请给出深度解读。`;
+      const prompt = `分析锡价$${latestReport.lme_price}的影响：${latestReport.summary}。给出深度解读。`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,7 +168,7 @@ const App = () => {
       });
       setDeepInsight(result.candidates?.[0]?.content?.parts?.[0]?.text || "暂无解读。");
     } catch (e) {
-      setErrorMsg("AI 分析失败。");
+      console.error(e);
     } finally {
       setInsightLoading(false);
     }
@@ -183,7 +185,7 @@ const App = () => {
         body: JSON.stringify({
           contents: [{ parts: [{ text }] }],
           generationConfig: { 
-            responseModalalities: ["AUDIO"], 
+            responseModalities: ["AUDIO"], 
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } 
           }
         })
@@ -211,14 +213,10 @@ const App = () => {
     setChatInput("");
     setChatLoading(true);
     try {
-      const systemPrompt = `分析师背景。当前锡价 $${latestReport.lme_price}。`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          contents: [{ parts: [{ text: chatInput }] }],
-          systemInstruction: { parts: [{ text: systemPrompt }] }
-        })
+        body: JSON.stringify({ contents: [{ parts: [{ text: chatInput }] }] })
       });
       setChatMessages(prev => [...prev, { role: 'ai', content: result.candidates?.[0]?.content?.parts?.[0]?.text || "AI 无响应。" }]);
     } catch (e) {
@@ -249,20 +247,17 @@ const App = () => {
             <Layers className="text-white" size={24} />
           </div>
           <div className="flex flex-col text-left">
-            <span className="text-lg font-black text-white leading-none uppercase">Tin Market</span>
-            <span className="text-[10px] text-blue-500 font-black tracking-widest uppercase">Analytics</span>
+            <span className="text-lg font-black text-white leading-none uppercase tracking-tighter italic">Tin Intelligence</span>
+            <span className="text-[10px] text-blue-500 font-black tracking-widest uppercase">Dashboard</span>
           </div>
         </div>
         
         <nav className="space-y-2 flex-1">
-          <button onClick={() => setView('market')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'market' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-900'}`}>
+          <button onClick={() => setView('market')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'market' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}>
             <Home size={18} /> 市场仪表盘
           </button>
-          <button onClick={() => setView('quarterly')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-900'}`}>
+          <button onClick={() => setView('quarterly')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}>
             <Calendar size={18} /> 季度分析报告
-          </button>
-          <button onClick={() => setView('wiki')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'wiki' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-900'}`}>
-            <BookOpen size={18} /> 锡业百科
           </button>
         </nav>
 
@@ -272,17 +267,17 @@ const App = () => {
           </button>
           <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50 text-left">
             <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Live System
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> 系统在线
             </div>
-            <p className="text-slate-500 text-[9px] font-mono truncate uppercase">{appId}</p>
+            <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">{appId}</p>
           </div>
         </div>
       </aside>
 
       <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto text-left">
-        {errorMsg && (
+        {errorMsg && reports.length === 0 && (
           <div className="mb-8 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-400 text-sm">
-            <ShieldAlert size={18} /> {String(errorMsg)}
+            <ShieldAlert size={18} /> {errorMsg}
           </div>
         )}
 
@@ -292,7 +287,7 @@ const App = () => {
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic">Live Sync</span>
-                  <span className="text-blue-500 font-mono text-xs font-bold ml-2">ID: {latestReport.id}</span>
+                  <span className="text-blue-500 font-mono text-xs font-bold ml-2">BATCH: {latestReport.id}</span>
                 </div>
                 <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter italic uppercase text-left">精锡市场周度监测报告</h1>
                 <div className="flex items-baseline gap-4">
@@ -302,7 +297,7 @@ const App = () => {
                   </div>
                 </div>
               </div>
-              <button onClick={speakReport} disabled={ttsLoading} className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all">
+              <button onClick={speakReport} disabled={ttsLoading} className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all shadow-lg">
                 {ttsLoading ? <Loader2 className="animate-spin text-blue-500" size={18} /> : <Volume2 size={18} className="text-blue-500" />} ✨ 播报摘要
               </button>
             </header>
@@ -311,11 +306,14 @@ const App = () => {
               <div className="lg:col-span-2 space-y-8">
                 <div className="bg-slate-950 border border-slate-800 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden text-left">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic"><BarChart3 size={22} className="text-blue-500" /> LME 价格趋势波动</h3>
-                  <div className="h-[280px]">
+                  <div className="h-[320px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={[...reports].reverse()}>
                         <defs>
-                          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                         <XAxis dataKey="id" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} dy={10} />
@@ -328,8 +326,8 @@ const App = () => {
 
                 <div className="bg-blue-600/10 border border-blue-600/20 p-8 rounded-[2.5rem] relative overflow-hidden group text-left">
                   <div className="flex items-center justify-between mb-6">
-                    <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2"><Sparkles size={14} /> AI Deep Insight</h4>
-                    <button onClick={generateDeepInsight} disabled={insightLoading} className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2 bg-blue-600/10 px-4 py-1.5 rounded-full border border-blue-600/20">
+                    <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 text-left"><Sparkles size={14} /> AI Deep Insight</h4>
+                    <button onClick={generateDeepInsight} disabled={insightLoading} className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2 bg-blue-600/10 px-4 py-1.5 rounded-full border border-blue-600/20 shadow-sm">
                       {insightLoading ? <Loader2 className="animate-spin" size={14} /> : "✨ 生成深度解读"}
                     </button>
                   </div>
@@ -342,9 +340,9 @@ const App = () => {
               </div>
 
               <div className="space-y-8 text-left">
-                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[3rem] shadow-xl text-left">
+                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[3rem] shadow-xl text-left border border-blue-500/20">
                   <Zap className="text-yellow-400 mb-4" fill="currentColor" size={28} />
-                  <h3 className="text-xl font-black text-white mb-6 uppercase italic">AI 预测策略</h3>
+                  <h3 className="text-xl font-black text-white mb-6 uppercase italic text-left">AI 预测策略</h3>
                   <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line text-left">
                     {latestReport.outlook || "AI 正在对未来供需进行深度建模..."}
                   </p>
@@ -354,9 +352,9 @@ const App = () => {
                   <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-xs tracking-widest text-slate-400">往期快照</h3>
                   <div className="space-y-4">
                     {reports.slice(1, 6).map((r, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500 font-mono uppercase">{r.id}</span>
-                        <span className="text-white font-bold">${r.lme_price}</span>
+                      <div key={idx} className="flex justify-between items-center text-xs group">
+                        <span className="text-slate-500 font-mono uppercase group-hover:text-blue-400 transition-colors">{r.id}</span>
+                        <span className="text-white font-bold tracking-tighter">${r.lme_price}</span>
                       </div>
                     ))}
                   </div>
@@ -369,49 +367,27 @@ const App = () => {
         {view === 'quarterly' && (
           <div className="animate-in fade-in slide-in-from-left-4 duration-500 text-left">
             <h1 className="text-4xl lg:text-5xl font-black text-white mb-10 tracking-tighter uppercase italic text-left">季度深度分析存档</h1>
-            <div className="grid grid-cols-1 gap-8">
+            <div className="grid grid-cols-1 gap-12 text-left">
               {quarterlyReports.length > 0 ? quarterlyReports.map(q => (
-                <div key={q.id} className="bg-slate-900/50 border border-slate-800 p-8 rounded-[3rem] hover:border-blue-600 transition-all text-left group">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 bg-blue-600/20 rounded-2xl flex items-center justify-center text-blue-500"><FileText /></div>
-                    <h3 className="text-2xl font-black text-white uppercase italic text-left">{q.title}</h3>
+                <div key={q.id} className="bg-slate-900/50 border border-slate-800 p-8 lg:p-12 rounded-[3.5rem] hover:border-blue-600/50 transition-all text-left group">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="w-14 h-14 bg-blue-600/20 rounded-2xl flex items-center justify-center text-blue-500 shadow-lg shadow-blue-500/10"><FileText size={28} /></div>
+                    <h3 className="text-2xl lg:text-3xl font-black text-white uppercase italic text-left leading-tight">{q.title}</h3>
                   </div>
-                  <div className="text-slate-300 leading-relaxed whitespace-pre-line text-[15px] italic mb-6 text-left">
-                    {q.content}
+                  <div className="text-slate-300 leading-[1.8] whitespace-pre-line text-[16px] italic mb-10 text-left bg-slate-950/30 p-8 rounded-[2rem] border border-slate-800/50 tracking-wide overflow-hidden">
+                    {formatContent(q.content)}
                   </div>
-                  <div className="flex gap-3 text-left">
-                    <span className="text-[10px] font-black bg-slate-800 px-3 py-1 rounded-full text-slate-500 uppercase">ID: {q.id}</span>
-                    <span className="text-[10px] font-black bg-blue-600/20 px-3 py-1 rounded-full text-blue-400 uppercase italic">Macro Review</span>
+                  <div className="flex flex-wrap gap-3 text-left">
+                    <span className="text-[10px] font-black bg-slate-800 px-3 py-1.5 rounded-lg text-slate-500 uppercase tracking-widest border border-slate-700">REF: {q.id}</span>
+                    <span className="text-[10px] font-black bg-blue-600/20 px-3 py-1.5 rounded-lg text-blue-400 uppercase italic tracking-widest">NotebookLM Insight</span>
                   </div>
                 </div>
               )) : (
-                <div className="bg-slate-900/30 border border-slate-800 border-dashed p-20 rounded-[3rem] text-center">
-                   <HelpCircle className="mx-auto text-slate-700 mb-4" size={48} />
-                   <p className="text-slate-500 font-black uppercase text-xs tracking-[0.2em] text-center">暂无季度报告存档</p>
+                <div className="bg-slate-900/30 border border-slate-800 border-dashed p-24 rounded-[3.5rem] text-center">
+                   <HelpCircle className="mx-auto text-slate-800 mb-6" size={56} />
+                   <p className="text-slate-500 font-black uppercase text-xs tracking-[0.3em] text-center">暂无季度报告存档</p>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {view === 'wiki' && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-500 text-left">
-            <h1 className="text-4xl font-black text-white mb-8 tracking-tighter uppercase italic text-left">锡产业百科</h1>
-            <div className="bg-slate-900/30 border border-slate-800 rounded-[3rem] p-10 text-left">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                 <div className="space-y-4 text-left">
-                    <p className="text-blue-500 font-black text-[10px] uppercase tracking-widest mb-4">交易基础</p>
-                    {['LME 仓单系统', 'SHFE 升贴水逻辑'].map(t => (
-                      <div key={t} className="text-slate-400 hover:text-white cursor-pointer py-1 font-bold text-sm flex items-center gap-2"><ChevronRight size={14}/> {t}</div>
-                    ))}
-                 </div>
-                 <div className="space-y-4 text-left">
-                    <p className="text-indigo-500 font-black text-[10px] uppercase tracking-widest mb-4">下游应用</p>
-                    {['电子焊接材料', '光伏焊带需求'].map(t => (
-                      <div key={t} className="text-slate-400 hover:text-white cursor-pointer py-1 font-bold text-sm flex items-center gap-2"><ChevronRight size={14}/> {t}</div>
-                    ))}
-                 </div>
-               </div>
             </div>
           </div>
         )}
@@ -420,11 +396,11 @@ const App = () => {
       {/* AI 聊天抽屉 */}
       {chatOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setChatOpen(false)} />
-          <div className="relative w-full max-w-md bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300 text-left">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setChatOpen(false)} />
+          <div className="relative w-full max-w-md bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-400 text-left">
             <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950 text-left">
               <div className="flex items-center gap-2 text-white font-bold tracking-tight text-left"><Sparkles size={18} className="text-indigo-400" /> ✨ 锡市 AI 智库</div>
-              <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-white transition-colors"><X size={20} /></button>
+              <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-slate-900 rounded-lg"><X size={20} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-6 text-left">
               {chatMessages.map((msg, i) => (
@@ -432,12 +408,12 @@ const App = () => {
                   <div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium ${msg.role === 'user' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-200 border border-slate-700'}`}>{msg.content}</div>
                 </div>
               ))}
-              {chatLoading && <div className="flex justify-start"><div className="bg-slate-800 p-4 rounded-2xl border border-slate-700"><Loader2 className="animate-spin text-blue-500" size={18} /></div></div>}
+              {chatLoading && <div className="flex justify-start"><div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-sm"><Loader2 className="animate-spin text-blue-500" size={18} /></div></div>}
             </div>
             <div className="p-6 border-t border-slate-800 bg-slate-950 text-left">
               <div className="flex gap-2">
-                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleChat()} placeholder="咨询行业深度分析..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500" />
-                <button onClick={handleChat} disabled={chatLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all disabled:opacity-50"><Send size={18} /></button>
+                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleChat()} placeholder="咨询深度行业分析..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-600" />
+                <button onClick={handleChat} disabled={chatLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all disabled:opacity-50 shadow-lg"><Send size={18} /></button>
               </div>
             </div>
           </div>
@@ -445,9 +421,6 @@ const App = () => {
       )}
     </div>
   );
-};
-
-export default App;
 };
 
 export default App;
