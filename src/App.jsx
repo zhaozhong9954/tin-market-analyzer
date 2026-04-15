@@ -13,7 +13,7 @@ import {
 // --- 导入 Firebase SDK ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, query } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 
 /**
  * ✅ Firebase 配置
@@ -33,7 +33,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = "tin-market-analyzer";
 
-// --- Gemini API 服务配置 ---
 const apiKey = ""; 
 
 const fetchWithRetry = async (url, options, retries = 5) => {
@@ -75,20 +74,18 @@ const pcmToWav = (pcmData, sampleRate) => {
 // --- 子组件：季度报告卡片 (带折叠逻辑) ---
 const QuarterlyCard = ({ q, formatContent }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-
-  // 解析标签：支持数组或逗号分隔的字符串
   const tags = Array.isArray(q.tags) ? q.tags : (q.tags ? String(q.tags).split(/[,，]/) : []);
 
   return (
     <div className="bg-slate-900/50 border border-slate-800 p-8 lg:p-12 rounded-[3.5rem] hover:border-blue-600/50 transition-all text-left group">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-blue-600/20 rounded-2xl flex items-center justify-center text-blue-500 shadow-lg shadow-blue-500/10 shrink-0">
+          <div className="w-14 h-14 bg-blue-600/20 rounded-2xl flex items-center justify-center text-blue-500 shadow-lg shadow-blue-500/10 shrink-0 overflow-hidden">
             <FileText size={28} />
           </div>
           <div>
             <h3 className="text-2xl lg:text-3xl font-black text-white uppercase italic leading-tight">{q.title}</h3>
-            <div className="flex flex-wrap gap-2 mt-3">
+            <div className="flex flex-wrap gap-2 mt-3 text-left">
               {tags.map((tag, idx) => (
                 <span key={idx} className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full text-[10px] font-bold text-blue-400 uppercase tracking-wider">
                   <Tag size={10} /> {tag.trim()}
@@ -102,12 +99,10 @@ const QuarterlyCard = ({ q, formatContent }) => {
         </div>
       </div>
 
-      {/* 摘要区域：始终显示 */}
       <div className="text-slate-300 leading-[1.8] text-[16px] mb-6 italic text-left tracking-wide">
         {q.summary ? formatContent(q.summary) : "点击下方按钮查看内容概要..."}
       </div>
 
-      {/* 全文区域：受控制展开 */}
       {isExpanded && (
         <div className="mt-8 pt-8 border-t border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="text-slate-400 leading-[1.9] whitespace-pre-line text-[15px] text-left bg-slate-950/40 p-8 rounded-[2rem] border border-slate-800/50 tracking-normal break-words">
@@ -120,11 +115,7 @@ const QuarterlyCard = ({ q, formatContent }) => {
         onClick={() => setIsExpanded(!isExpanded)}
         className="mt-6 flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-blue-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-xl"
       >
-        {isExpanded ? (
-          <><ChevronUp size={16} /> 收起全文</>
-        ) : (
-          <><ChevronDown size={16} /> 阅读全文</>
-        )}
+        {isExpanded ? <><ChevronUp size={16} /> 收起全文</> : <><ChevronDown size={16} /> 阅读全文</>}
       </button>
     </div>
   );
@@ -148,19 +139,14 @@ const App = () => {
   const [ttsLoading, setTtsLoading] = useState(false);
   const audioRef = useRef(null);
 
-  // 1. 匿名登录
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u);
-      } else {
-        signInAnonymously(auth).catch(err => setErrorMsg("Authentication error"));
-      }
+      if (u) setUser(u);
+      else signInAnonymously(auth).catch(() => setErrorMsg("Authentication error"));
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. 周报监听
   useEffect(() => {
     if (!user) return;
     const reportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
@@ -181,14 +167,13 @@ const App = () => {
       setReports(sortedData);
       setLatestReport(sortedData[0] || null);
       setLoading(false);
-      setErrorMsg(null); // 加载成功则清除错误
+      setErrorMsg(null);
     }, (error) => {
       if (reports.length === 0) setErrorMsg("数据库访问受限 (Permission Denied)");
     });
     return () => unsubscribe();
   }, [user]);
 
-  // 3. 季度报告监听
   useEffect(() => {
     if (!user) return;
     const qReportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'quarterly_reports');
@@ -209,13 +194,12 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // --- 排版助手：修复多余换行导致的标点孤行问题 ---
   const formatContent = (text) => {
     if (!text) return "";
     return String(text)
-      .replace(/\n\s*[。|·|•]\s*\n/g, '。') // 合并孤立句号
-      .replace(/([。！？])\n+/g, '$1\n') // 标点后换行保持紧凑
-      .replace(/\n\n+/g, '\n\n') // 压缩过多的空白行
+      .replace(/\n\s*[。|·|•]\s*\n/g, '。')
+      .replace(/([。！？])\n+/g, '$1\n')
+      .replace(/\n\n+/g, '\n\n')
       .trim();
   };
 
@@ -223,13 +207,13 @@ const App = () => {
     if (!latestReport) return;
     setInsightLoading(true);
     try {
-      const prompt = `分析锡价$${latestReport.lme_price}的影响：${latestReport.summary}。给出深度解读。`;
+      const prompt = `分析锡价$${latestReport.lme_price}的影响。`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
-      setDeepInsight(result.candidates?.[0]?.content?.parts?.[0]?.text || "暂无解读。");
+      setDeepInsight(result.candidates?.[0]?.content?.parts?.[0]?.text || "分析生成失败。");
     } catch (e) {
       console.error(e);
     } finally {
@@ -281,7 +265,7 @@ const App = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: chatInput }] }] })
       });
-      setChatMessages(prev => [...prev, { role: 'ai', content: result.candidates?.[0]?.content?.parts?.[0]?.text || "AI 暂时无法解析。" }]);
+      setChatMessages(prev => [...prev, { role: 'ai', content: result.candidates?.[0]?.content?.parts?.[0]?.text || "AI 暂时无法响应。" }]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -300,91 +284,85 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans text-left relative overflow-x-hidden">
+    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans text-left relative overflow-x-hidden flex flex-col">
       <audio ref={audioRef} className="hidden" />
 
       {/* 侧边栏 */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800 hidden lg:flex flex-col p-8 z-20">
+      <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800 hidden lg:flex flex-col p-8 z-20 text-left">
         <div className="flex items-center gap-3 mb-10 text-left">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
-            <Layers className="text-white" size={24} />
+          {/* ✅ Logo 集成 */}
+          <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-900/10 overflow-hidden border border-slate-800">
+            <img src="tin analyzer logo.jpg" alt="Tin Analyzer Logo" className="w-full h-full object-cover" onError={(e) => e.target.src = "https://placehold.co/100x100?text=Sn"} />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col text-left">
             <span className="text-lg font-black text-white leading-none uppercase tracking-tighter italic">Tin Terminal</span>
             <span className="text-[10px] text-blue-500 font-black tracking-widest uppercase">Intelligence</span>
           </div>
         </div>
         
-        <nav className="space-y-2 flex-1">
+        <nav className="space-y-2 flex-1 text-left">
           <button onClick={() => setView('market')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'market' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}>
             <Home size={18} /> 市场仪表盘
           </button>
           <button onClick={() => setView('quarterly')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}>
-            <Calendar size={18} /> 分析报告
+            <Calendar size={18} /> 季度分析报告
           </button>
         </nav>
 
-        <div className="mt-auto space-y-4">
+        <div className="mt-auto space-y-4 text-left">
           <button onClick={() => setChatOpen(true)} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600/10 border border-indigo-600/30 text-indigo-400 rounded-xl font-bold text-sm hover:bg-indigo-600/20 transition-all">
             <MessageSquare size={16} /> ✨ 问问 AI 智库
           </button>
           <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50 text-left">
             <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> 系统正常
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> 系统在线
             </div>
-            <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">DATA: {appId}</p>
+            <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">{appId}</p>
           </div>
         </div>
       </aside>
 
-      <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto text-left">
-        {/* 错误提示只有在没有数据时才显示 */}
+      <main className="lg:ml-64 p-6 lg:p-12 max-w-7xl mx-auto text-left flex-1 pb-24">
         {errorMsg && reports.length === 0 && (
-          <div className="mb-8 p-5 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-start gap-4 text-rose-400 text-sm animate-in fade-in zoom-in duration-300">
+          <div className="mb-8 p-5 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-start gap-4 text-rose-400 text-sm">
             <ShieldAlert className="shrink-0 mt-0.5" size={20} />
             <div>
-              <p className="font-bold mb-1">数据库访问限制</p>
-              <p className="opacity-90 leading-relaxed mb-3">{errorMsg}</p>
-              <div className="bg-black/20 p-3 rounded-lg border border-rose-500/10 text-xs font-mono">
-                请确认 Firebase 控制台中的 Rules 已发布。
-              </div>
+              <p className="font-bold mb-1 text-left">数据库访问限制</p>
+              <p className="opacity-90 leading-relaxed text-left">{errorMsg}</p>
             </div>
           </div>
         )}
 
         {view === 'market' && latestReport && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 text-left">
             <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 text-left">
-              <div>
+              <div className="text-left">
                 <div className="flex items-center gap-2 mb-4">
-                  <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic shadow-lg shadow-blue-900/20">Market Sync</span>
+                  <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic shadow-lg">Market Sync</span>
                   <span className="text-blue-500 font-mono text-xs font-bold ml-2">ID: {latestReport.id}</span>
                 </div>
                 <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter italic uppercase text-left">精锡市场周度监测报告</h1>
-                <div className="flex items-baseline gap-4">
+                <div className="flex items-baseline gap-4 text-left">
                   <div className="text-5xl font-mono font-black text-white italic tracking-tighter text-left">${latestReport.lme_price}</div>
                   <div className={`text-xl font-bold ${isNegative(latestReport.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
                     {latestReport.change_percent}%
                   </div>
                 </div>
               </div>
-              <button onClick={speakReport} disabled={ttsLoading} className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all shadow-lg">
+              <button onClick={speakReport} disabled={ttsLoading} className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all shadow-lg text-left">
                 {ttsLoading ? <Loader2 className="animate-spin text-blue-500" size={18} /> : <Volume2 size={18} className="text-blue-500" />} ✨ 播报摘要
               </button>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
+              <div className="lg:col-span-2 space-y-8 text-left">
                 <div className="bg-slate-950 border border-slate-800 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden text-left">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic"><BarChart3 size={22} className="text-blue-500" /> LME 价格趋势波动</h3>
-                  <div className="h-[320px] w-full">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic text-left"><BarChart3 size={22} className="text-blue-500" /> LME 价格趋势波动</h3>
+                  <div className="h-[320px] w-full text-left">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={[...reports].reverse()}>
                         <defs>
-                          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                          </linearGradient>
+                          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                         <XAxis dataKey="id" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} dy={10} />
@@ -396,9 +374,9 @@ const App = () => {
                 </div>
 
                 <div className="bg-blue-600/10 border border-blue-600/20 p-8 rounded-[2.5rem] relative overflow-hidden group text-left">
-                  <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center justify-between mb-6 text-left">
                     <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 text-left"><Sparkles size={14} /> AI Deep Insight</h4>
-                    <button onClick={generateDeepInsight} disabled={insightLoading} className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2 bg-blue-600/10 px-4 py-1.5 rounded-full border border-blue-600/20 shadow-sm">
+                    <button onClick={generateDeepInsight} disabled={insightLoading} className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2 bg-blue-600/10 px-4 py-1.5 rounded-full border border-blue-600/20 shadow-sm text-left">
                       {insightLoading ? <Loader2 className="animate-spin" size={14} /> : "✨ 生成深度解读"}
                     </button>
                   </div>
@@ -415,17 +393,17 @@ const App = () => {
                   <Zap className="text-yellow-400 mb-4" fill="currentColor" size={28} />
                   <h3 className="text-xl font-black text-white mb-6 uppercase italic text-left">AI 预测策略</h3>
                   <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line text-left">
-                    {latestReport.outlook || "AI 正在对未来供需进行深度建模..."}
+                    {latestReport.outlook || "AI 正在分析未来供需平衡..."}
                   </p>
                 </div>
 
                 <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[3rem] border-dashed text-left">
-                  <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-xs tracking-widest text-slate-400">往期周报快照</h3>
-                  <div className="space-y-4">
+                  <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-xs tracking-widest text-slate-400 text-left">往期快照</h3>
+                  <div className="space-y-4 text-left">
                     {reports.slice(1, 6).map((r, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs group">
-                        <span className="text-slate-500 font-mono uppercase group-hover:text-blue-400 transition-colors">{r.id}</span>
-                        <span className="text-white font-bold tracking-tighter">${r.lme_price}</span>
+                      <div key={idx} className="flex justify-between items-center text-xs text-left">
+                        <span className="text-slate-500 font-mono uppercase text-left">{r.id}</span>
+                        <span className="text-white font-bold text-left">${r.lme_price}</span>
                       </div>
                     ))}
                   </div>
@@ -437,22 +415,21 @@ const App = () => {
 
         {view === 'quarterly' && (
           <div className="animate-in fade-in slide-in-from-left-4 duration-500 text-left">
-            <h1 className="text-4xl lg:text-5xl font-black text-white mb-10 tracking-tighter uppercase italic text-left">深度分析报告</h1>
+            <h1 className="text-4xl lg:text-5xl font-black text-white mb-10 tracking-tighter uppercase italic text-left">季度深度分析存档</h1>
             <div className="grid grid-cols-1 gap-12 text-left">
               {quarterlyReports.length > 0 ? quarterlyReports.map(q => (
                 <QuarterlyCard key={q.id} q={q} formatContent={formatContent} />
               )) : (
-                <div className="bg-slate-900/30 border border-slate-800 border-dashed p-24 rounded-[3.5rem] text-center">
-                   <HelpCircle className="mx-auto text-slate-800 mb-6" size={56} />
+                <div className="bg-slate-900/30 border border-slate-800 border-dashed p-24 rounded-[3.5rem] text-center text-left">
+                   <HelpCircle className="mx-auto text-slate-800 mb-6 text-center" size={56} />
                    <p className="text-slate-500 font-black uppercase text-xs tracking-[0.3em] text-center">暂无季度报告存档</p>
                 </div>
               )}
             </div>
           </div>
         )}
-      </main>
-      
-      {/* ✅ 免责声明页脚 */}
+
+        {/* ✅ 免责声明页脚 */}
         <footer className="mt-24 pt-12 border-t border-slate-800/50 pb-12 text-left">
           <div className="bg-slate-900/20 p-8 rounded-[2rem] border border-slate-800/30">
             <div className="flex items-center gap-2 text-slate-500 font-black text-[10px] uppercase tracking-[0.2em] mb-4 text-left">
@@ -466,9 +443,9 @@ const App = () => {
         </footer>
       </main>
 
-      {/* ✨ AI 聊天抽屉 */}
+      {/* AI 聊天抽屉 */}
       {chatOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="fixed inset-0 z-50 flex justify-end text-left">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setChatOpen(false)} />
           <div className="relative w-full max-w-md bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-400 text-left">
             <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950 text-left">
@@ -477,16 +454,16 @@ const App = () => {
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-6 text-left">
               {chatMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium ${msg.role === 'user' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-200 border border-slate-700'}`}>{msg.content}</div>
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} text-left`}>
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium ${msg.role === 'user' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-200 border border-slate-700'} text-left`}>{msg.content}</div>
                 </div>
               ))}
-              {chatLoading && <div className="flex justify-start"><div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-sm"><Loader2 className="animate-spin text-blue-500" size={18} /></div></div>}
+              {chatLoading && <div className="flex justify-start text-left"><div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-sm"><Loader2 className="animate-spin text-blue-500" size={18} /></div></div>}
             </div>
             <div className="p-6 border-t border-slate-800 bg-slate-950 text-left">
-              <div className="flex gap-2">
-                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleChat()} placeholder="咨询行业分析..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-600" />
-                <button onClick={handleChat} disabled={chatLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all disabled:opacity-50 shadow-lg"><Send size={18} /></button>
+              <div className="flex gap-2 text-left">
+                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleChat()} placeholder="咨询深度分析..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-left" />
+                <button onClick={handleChat} disabled={chatLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all disabled:opacity-50 text-left"><Send size={18} /></button>
               </div>
             </div>
           </div>
