@@ -451,6 +451,20 @@ const App = () => {
           </div>
         )}
       </main>
+      
+      {/* ✅ 免责声明页脚 */}
+        <footer className="mt-24 pt-12 border-t border-slate-800/50 pb-12 text-left">
+          <div className="bg-slate-900/20 p-8 rounded-[2rem] border border-slate-800/30">
+            <div className="flex items-center gap-2 text-slate-500 font-black text-[10px] uppercase tracking-[0.2em] mb-4 text-left">
+              <ShieldAlert size={14} /> 免责声明 / Disclaimer
+            </div>
+            <p className="text-slate-500 text-xs leading-relaxed italic text-left">
+              本报告及网站所载内容（包括但不限于价格分析、市场预测、AI 洞察等）仅供内部参考和信息交流之用，不构成任何形式的投资建议、法律建议或商业决策依据。
+              市场投资具有风险，历史数据不代表未来表现。用户基于本站内容所进行的任何投资行为及由此产生的后果，本站及相关方概不负责。
+            </p>
+          </div>
+        </footer>
+      </main>
 
       {/* ✨ AI 聊天抽屉 */}
       {chatOpen && (
