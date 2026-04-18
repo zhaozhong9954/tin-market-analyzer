@@ -100,13 +100,13 @@ const QuarterlyCard = ({ q, formatContent }) => {
       </div>
 
       <div className="text-slate-300 leading-[1.8] text-[16px] mb-6 italic text-left tracking-wide">
-        {q.summary ? formatContent(q.summary) : "点击下方按钮查看内容概要..."}
+        {q.summary ? formatContent(q.summary) : "Click the button below to view the content summary..."}
       </div>
 
       {isExpanded && (
         <div className="mt-8 pt-8 border-t border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="text-slate-400 leading-[1.9] whitespace-pre-line text-[15px] text-left bg-slate-950/40 p-8 rounded-[2rem] border border-slate-800/50 tracking-normal break-words">
-            {formatContent(q.content || "内容正在同步中...")}
+            {formatContent(q.content || "Content is being synchronized...")}
           </div>
         </div>
       )}
@@ -115,7 +115,7 @@ const QuarterlyCard = ({ q, formatContent }) => {
         onClick={() => setIsExpanded(!isExpanded)}
         className="mt-6 flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-blue-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-xl"
       >
-        {isExpanded ? <><ChevronUp size={16} /> 收起全文</> : <><ChevronDown size={16} /> 阅读全文</>}
+        {isExpanded ? <><ChevronUp size={16} /> Collapse full text</> : <><ChevronDown size={16} /> Read full text</>}
       </button>
     </div>
   );
@@ -302,20 +302,20 @@ const App = () => {
         
         <nav className="space-y-2 flex-1 text-left">
           <button onClick={() => setView('market')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'market' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}>
-            <Home size={18} /> 市场仪表盘
+            <Home size={18} /> Market Dashboard
           </button>
           <button onClick={() => setView('quarterly')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${view === 'quarterly' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:bg-slate-900'}`}>
-            <Calendar size={18} /> 分析报告
+            <Calendar size={18} /> Analysis Report
           </button>
         </nav>
 
         <div className="mt-auto space-y-4 text-left">
           <button onClick={() => setChatOpen(true)} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600/10 border border-indigo-600/30 text-indigo-400 rounded-xl font-bold text-sm hover:bg-indigo-600/20 transition-all">
-            <MessageSquare size={16} /> ✨ 问问 AI 智库
+            <MessageSquare size={16} /> ✨ Ask the AI
           </button>
           <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50 text-left">
             <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase mb-1">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> 系统在线
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> System Online
             </div>
             <p className="text-slate-500 text-[9px] font-mono truncate uppercase tracking-tighter">{appId}</p>
           </div>
@@ -341,7 +341,7 @@ const App = () => {
                   <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase italic shadow-lg">Market Sync</span>
                   <span className="text-blue-500 font-mono text-xs font-bold ml-2">ID: {latestReport.id}</span>
                 </div>
-                <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter italic uppercase text-left">精锡市场周度监测报告</h1>
+                <h1 className="text-4xl lg:text-5xl font-black text-white mb-4 tracking-tighter italic uppercase text-left">Weekly Report of the Refined Tin Market</h1>
                 <div className="flex items-baseline gap-4 text-left">
                   <div className="text-5xl font-mono font-black text-white italic tracking-tighter text-left">${latestReport.lme_price}</div>
                   <div className={`text-xl font-bold ${isNegative(latestReport.change_percent) ? 'text-rose-500' : 'text-emerald-500'}`}>
@@ -350,14 +350,14 @@ const App = () => {
                 </div>
               </div>
               <button onClick={speakReport} disabled={ttsLoading} className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-700 transition-all shadow-lg text-left">
-                {ttsLoading ? <Loader2 className="animate-spin text-blue-500" size={18} /> : <Volume2 size={18} className="text-blue-500" />} ✨ 播报摘要
+                {ttsLoading ? <Loader2 className="animate-spin text-blue-500" size={18} /> : <Volume2 size={18} className="text-blue-500" />} ✨ Broadcast Summary
               </button>
             </header>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
               <div className="lg:col-span-2 space-y-8 text-left">
                 <div className="bg-slate-950 border border-slate-800 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden text-left">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic text-left"><BarChart3 size={22} className="text-blue-500" /> LME 价格趋势波动</h3>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-8 italic text-left"><BarChart3 size={22} className="text-blue-500" /> LME Weekly Price</h3>
                   <div className="h-[320px] w-full text-left">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={[...reports].reverse()}>
@@ -377,7 +377,7 @@ const App = () => {
                   <div className="flex items-center justify-between mb-6 text-left">
                     <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 text-left"><Sparkles size={14} /> AI Deep Insight</h4>
                     <button onClick={generateDeepInsight} disabled={insightLoading} className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2 bg-blue-600/10 px-4 py-1.5 rounded-full border border-blue-600/20 shadow-sm text-left">
-                      {insightLoading ? <Loader2 className="animate-spin" size={14} /> : "✨ 生成深度解读"}
+                      {insightLoading ? <Loader2 className="animate-spin" size={14} /> : "✨ In-depth Analysis"}
                     </button>
                   </div>
                   {deepInsight ? (
@@ -391,7 +391,7 @@ const App = () => {
               <div className="space-y-8 text-left">
                 <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 rounded-[3rem] shadow-xl text-left border border-blue-500/20">
                   <Zap className="text-yellow-400 mb-4" fill="currentColor" size={28} />
-                  <h3 className="text-xl font-black text-white mb-6 uppercase italic text-left">AI 预测策略</h3>
+                  <h3 className="text-xl font-black text-white mb-6 uppercase italic text-left">AI Outlook</h3>
                   <p className="text-blue-50 text-[15px] leading-relaxed font-medium opacity-95 whitespace-pre-line text-left">
                     {latestReport.outlook || "AI 正在分析未来供需平衡..."}
                   </p>
@@ -415,7 +415,7 @@ const App = () => {
 
         {view === 'quarterly' && (
           <div className="animate-in fade-in slide-in-from-left-4 duration-500 text-left">
-            <h1 className="text-4xl lg:text-5xl font-black text-white mb-10 tracking-tighter uppercase italic text-left">深度分析报告</h1>
+            <h1 className="text-4xl lg:text-5xl font-black text-white mb-10 tracking-tighter uppercase italic text-left">In depth Analysis Report</h1>
             <div className="grid grid-cols-1 gap-12 text-left">
               {quarterlyReports.length > 0 ? quarterlyReports.map(q => (
                 <QuarterlyCard key={q.id} q={q} formatContent={formatContent} />
@@ -436,8 +436,9 @@ const App = () => {
               <ShieldAlert size={14} /> 免责声明 / Disclaimer
             </div>
             <p className="text-slate-500 text-xs leading-relaxed italic text-left">
-              本报告及网站所载内容（包括但不限于价格分析、市场预测、AI 洞察等）仅供内部参考和信息交流之用，不构成任何形式的投资建议、法律建议或商业决策依据。
-              市场投资具有风险，历史数据不代表未来表现。用户基于本站内容所进行的任何投资行为及由此产生的后果，本站及相关方概不负责。
+              The contents of this report and website (including but not limited to price analysis, market forecasts, and AI insights) are for internal reference and information exchange purposes only. They do not constitute any form of investment advice, legal advice, or a basis for business decisions.
+
+Market investment involves risk; historical data is not indicative of future performance. This site and its affiliates shall not be held liable for any investment actions taken by users based on the content of this site or any consequences arising therefrom.
             </p>
           </div>
         </footer>
@@ -449,7 +450,7 @@ const App = () => {
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setChatOpen(false)} />
           <div className="relative w-full max-w-md bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-400 text-left">
             <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950 text-left">
-              <div className="flex items-center gap-2 text-white font-bold tracking-tight text-left"><Sparkles size={18} className="text-indigo-400" /> ✨ 锡市 AI 智库</div>
+              <div className="flex items-center gap-2 text-white font-bold tracking-tight text-left"><Sparkles size={18} className="text-indigo-400" /> ✨ Tin AI </div>
               <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-slate-900 rounded-lg"><X size={20} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-6 text-left">
