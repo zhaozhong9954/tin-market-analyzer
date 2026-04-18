@@ -398,7 +398,7 @@ const App = () => {
                 </div>
 
                 <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[3rem] border-dashed text-left">
-                  <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-xs tracking-widest text-slate-400 text-left">往期快照</h3>
+                  <h3 className="text-white font-black mb-6 flex items-center gap-2 italic uppercase text-xs tracking-widest text-slate-400 text-left">History</h3>
                   <div className="space-y-4 text-left">
                     {reports.slice(1, 6).map((r, idx) => (
                       <div key={idx} className="flex justify-between items-center text-xs text-left">
