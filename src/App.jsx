@@ -155,9 +155,27 @@ const App = () => {
     const unsubscribe = onSnapshot(reportsCol, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const raw = doc.data();
+        
+        // --- Robust Data Mapping ---
+        // Ensuring all possible AI output field names are captured
+        const outlookContent = raw.outlook || raw.outlook_analysis || raw.outlook_text || raw.market_outlook || "";
+        const summaryContent = raw.summary || raw.market_summary || "";
+        const linkedinContent = raw.linkedin_text || raw.social_media_post || raw.linkedin || "";
+        const emailContent = raw.email_content || raw.newsletter || raw.email || "";
+
         const cleanPrice = typeof raw.lme_price === 'string' ? parseFloat(raw.lme_price.replace(/,/g, '')) : raw.lme_price;
         const cleanPercent = typeof raw.change_percent === 'string' ? parseFloat(raw.change_percent.replace('%', '')) : raw.change_percent;
-        return { id: doc.id, ...raw, lme_price_numeric: cleanPrice, change_percent_numeric: cleanPercent };
+        
+        return { 
+          id: doc.id, 
+          ...raw, 
+          outlook: outlookContent,
+          summary: summaryContent,
+          linkedin_text: linkedinContent,
+          email_content: emailContent,
+          lme_price_numeric: cleanPrice, 
+          change_percent_numeric: cleanPercent 
+        };
       });
       const sortedData = data.sort((a, b) => b.id.localeCompare(a.id));
       setReports(sortedData);
@@ -333,7 +351,13 @@ const App = () => {
                 </div>
               </div>
               <div className="space-y-6 lg:space-y-8">
-                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-6 lg:p-8 rounded-[2rem] lg:rounded-[3rem] shadow-xl text-left border border-blue-500/20"><Zap className="text-yellow-400 mb-4" fill="currentColor" size={24} /><h3 className="text-lg font-black text-white mb-4 uppercase italic">AI Outlook Strategy</h3><p className="text-blue-50 text-sm lg:text-base leading-relaxed font-medium opacity-95 whitespace-pre-line">{latestReport.outlook || "AI analyzing..."}</p></div>
+                <div className="bg-gradient-to-br from-blue-700 to-indigo-900 p-6 lg:p-8 rounded-[2rem] lg:rounded-[3rem] shadow-xl text-left border border-blue-500/20">
+                  <Zap className="text-yellow-400 mb-4" fill="currentColor" size={24} />
+                  <h3 className="text-lg font-black text-white mb-4 uppercase italic">AI Outlook Strategy</h3>
+                  <p className="text-blue-50 text-sm lg:text-base leading-relaxed font-medium opacity-95 whitespace-pre-line">
+                    {latestReport.outlook || "AI generating outlook analysis..."}
+                  </p>
+                </div>
                 <div className="bg-slate-900/40 border border-slate-800 p-6 lg:p-8 rounded-[2rem] border-dashed text-left"><h3 className="text-white font-black mb-4 text-[10px] uppercase tracking-widest text-slate-500">Archived Snapshots</h3><div className="space-y-3">{reports.slice(1, 5).map((r, idx) => (<div key={idx} className="flex justify-between items-center text-[11px] group"><span className="text-slate-500 font-mono group-hover:text-blue-400 transition-colors uppercase">{r.id}</span><span className="text-white font-bold tracking-tighter">${r.lme_price}</span></div>))}</div></div>
               </div>
             </div>
