@@ -297,7 +297,7 @@ const App = () => {
       <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800 hidden lg:flex flex-col p-8 z-20 text-left">
         <div className="flex items-center gap-3 mb-10 text-left">
           <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center shadow-lg overflow-hidden border border-slate-800">
-            <img src="tin analyzer logo.jpg" alt="Logo" className="w-full h-full object-cover" onError={(e) => e.target.src = "https://placehold.co/100x100?text=Sn"} />
+            <img src="tin analyzer logo.png" alt="Logo" className="w-full h-full object-cover" onError={(e) => e.target.src = "https://placehold.co/100x100?text=Sn"} />
           </div>
           <div className="flex flex-col">
             <span className="text-lg font-black text-white leading-none uppercase tracking-tighter italic">Tin Terminal</span>
