@@ -158,9 +158,9 @@ const App = () => {
         
         // --- Robust Data Mapping ---
         // Ensuring all possible AI output field names are captured
-        const outlookContent = raw.outlook || raw.outlook_analysis || raw.outlook_text || raw.market_outlook || "";
-        const summaryContent = raw.summary || raw.market_summary || "";
-        const linkedinContent = raw.linkedin_text || raw.social_media_post || raw.linkedin || "";
+        const outlookContent = raw.outlook_analysis || "";
+        const summaryContent = raw.summary || "";
+        const linkedinContent = raw.linkedin_text || "";
         const emailContent = raw.email_content || raw.newsletter || raw.email || "";
 
         const cleanPrice = typeof raw.lme_price === 'string' ? parseFloat(raw.lme_price.replace(/,/g, '')) : raw.lme_price;
