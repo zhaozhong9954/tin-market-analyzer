@@ -276,7 +276,7 @@ const App = () => {
       {/* ✅ Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950/80 backdrop-blur-md border-b border-slate-800 z-40 px-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-           <img src="tin analyzer logo.jpg" alt="Logo" className="w-8 h-8 rounded-lg object-cover border border-slate-800" onError={(e) => e.target.src="https://placehold.co/50x50?text=Sn"} />
+           <img src="tin analyzer logo.png" alt="Logo" className="w-8 h-8 rounded-lg object-cover border border-slate-800" onError={(e) => e.target.src="https://placehold.co/50x50?text=Sn"} />
            <span className="font-black text-white text-xs uppercase tracking-tight italic">Tin Terminal</span>
         </div>
         <button onClick={() => setMobileMenuOpen(true)} className="p-2 text-slate-400 hover:text-white"><Menu size={24} /></button>
