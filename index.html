@@ -2,12 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>tin</title>
+    
+    <!-- 1. 基础标题 (将原本单调的 "tin" 改为专业名称) -->
+    <title>Tin Market Analyzer | Professional Insights</title>
+
+    <!-- 2. PWA 与图标设置 (精准匹配你 public 目录下的文件) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- 3. Open Graph (LinkedIn / Facebook 预览设置) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tin-market-analyzer.com/" />
+    <meta property="og:title" content="Tin Market Analyzer | Professional AI Insights" />
+    <meta property="og:description" content="Weekly LME tin price monitoring, stock analysis, and AI-driven market forecasts." />
+    <!-- 这里暂时用你的 Logo 作为分享图，如果以后有 1200x630 的图，把名字换掉即可 -->
+    <meta property="og:image" content="https://tin-market-analyzer.com/tin%20analyzer%20logo.png" />
+
+    <!-- 4. Twitter 预览设置 -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Tin Market Analyzer" />
+    <meta name="twitter:description" content="AI-driven intelligence for the global tin market." />
+    <meta name="twitter:image" content="https://tin-market-analyzer.com/tin%20analyzer%20logo.png" />
   </head>
   <body>
     <div id="root"></div>
+    <!-- 这是 Vite 加载 React 代码的入口，绝对不能删 -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
