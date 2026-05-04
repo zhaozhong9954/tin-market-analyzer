@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# 指向你的 sitemap 位置
+Sitemap: https://tin-market-analyzer.com/sitemap.xml
