@@ -71,19 +71,42 @@ const pcmToWav = (pcmData, sampleRate) => {
   return new Blob([buffer], { type: 'audio/wav' });
 };
 
-// --- Sub-component: Simple Markdown Formatter ---
-const MarkdownViewer = ({ content }) => {
-  if (!content) return null;
+// --- Helper Functions to safely parse Object or Primitive Values ---
+const parseVal = (val, fallback = 'N/A') => {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'object') {
+    return val.current ?? val.pct_change ?? val.diff ?? fallback;
+  }
+  return String(val);
+};
 
-  // Converts standard markdown headings, tables, bold text, lists into HTML layout
+const parseWow = (val, fallback = '0') => {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'object') {
+    return val.pct_change ?? val.diff ?? fallback;
+  }
+  return String(val);
+};
+
+const parseNumber = (val) => {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'object') {
+    val = val.current ?? val.pct_change ?? 0;
+  }
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseFloat(val.replace(/,/g, '').replace('%', '')) || 0;
+  return 0;
+};
+
+// --- Sub-component: Markdown Viewer ---
+const MarkdownViewer = ({ content }) => {
+  if (!content || typeof content !== 'string') {
+    return <div className="text-slate-500 italic text-sm py-4">No report content available.</div>;
+  }
+
   const renderFormattedMarkdown = (text) => {
     const lines = text.split('\n');
-    let inTable = false;
-    let tableHeader = [];
-    let tableRows = [];
-
     return lines.map((line, index) => {
-      // Heading 1 & 2
       if (line.startsWith('# ')) {
         return <h1 key={index} className="text-2xl font-black text-white mt-8 mb-4 italic uppercase border-b border-slate-800 pb-2">{line.replace('# ', '')}</h1>;
       }
@@ -93,8 +116,6 @@ const MarkdownViewer = ({ content }) => {
       if (line.startsWith('### ')) {
         return <h3 key={index} className="text-lg font-semibold text-slate-200 mt-4 mb-2">{line.replace('### ', '')}</h3>;
       }
-
-      // Blockquotes / Callouts
       if (line.startsWith('> ')) {
         return (
           <blockquote key={index} className="my-4 border-l-4 border-blue-500 bg-slate-900/60 p-4 rounded-r-xl italic text-slate-300">
@@ -102,53 +123,13 @@ const MarkdownViewer = ({ content }) => {
           </blockquote>
         );
       }
-
-      // Unordered List
       if (line.startsWith('- ') || line.startsWith('* ')) {
-        const itemText = line.replace(/^[-*]\s+/, '');
         return (
           <li key={index} className="ml-6 list-disc text-slate-300 my-1 leading-relaxed">
-            {itemText}
+            {line.replace(/^[-*]\s+/, '')}
           </li>
         );
       }
-
-      // Simple Table Parser
-      if (line.includes('|')) {
-        const cells = line.split('|').map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
-        if (cells.length > 0) {
-          if (line.includes('---')) return null; // Table divider
-          if (!inTable) {
-            inTable = true;
-            tableHeader = cells;
-            return null;
-          } else {
-            tableRows.push(cells);
-            return (
-              <div key={index} className="overflow-x-auto my-4">
-                <table className="w-full text-left border-collapse bg-slate-900/50 rounded-xl overflow-hidden border border-slate-800">
-                  <thead className="bg-slate-800/80 text-blue-400 text-xs uppercase tracking-wider">
-                    <tr>{tableHeader.map((th, i) => <th key={i} className="p-3 border-b border-slate-700">{th}</th>)}</tr>
-                  </thead>
-                  <tbody className="text-sm text-slate-300 divide-y divide-slate-800">
-                    {tableRows.map((row, rIdx) => (
-                      <tr key={rIdx} className="hover:bg-slate-800/30">
-                        {row.map((td, cIdx) => <td key={cIdx} className="p-3">{td}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          }
-        }
-      } else {
-        inTable = false;
-        tableHeader = [];
-        tableRows = [];
-      }
-
-      // Paragraph
       if (line.trim() === '') return <div key={index} className="h-4" />;
 
       return (
@@ -163,26 +144,29 @@ const MarkdownViewer = ({ content }) => {
 };
 
 // --- Sub-component: KPI Metric Card ---
-const KpiCard = ({ title, value, wow, subText, isPrice = false }) => {
-  const isPositive = parseFloat(wow) >= 0;
+const KpiCard = ({ title, value, wow, subText }) => {
+  const wowStr = parseWow(wow, '0');
+  const wowNum = parseFloat(wowStr.replace('%', '')) || 0;
+  const isPositive = wowNum >= 0;
+
   return (
-    <div className="bg-slate-900/80 border border-slate-800/80 p-5 rounded-2xl flex flex-col justify-between hover:border-blue-500/40 transition-all shadow-lg group">
+    <div className="bg-slate-900/80 border border-slate-800/80 p-5 rounded-2xl flex flex-col justify-between hover:border-blue-500/40 transition-all shadow-lg">
       <div>
         <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{title}</div>
-        <div className="text-xl lg:text-2xl font-mono font-black text-white italic tracking-tight">{value || 'N/A'}</div>
+        <div className="text-xl lg:text-2xl font-mono font-black text-white italic tracking-tight">{parseVal(value)}</div>
       </div>
       <div className="mt-4 flex items-center justify-between border-t border-slate-800/60 pt-3">
         <div className={`flex items-center gap-1 text-xs font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
           {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-          <span>{wow ? `${isPositive ? '+' : ''}${wow}% WoW` : '0%'}</span>
+          <span>{wowStr ? `${isPositive && !wowStr.startsWith('+') ? '+' : ''}${wowStr}% WoW` : '0%'}</span>
         </div>
-        {subText && <span className="text-[9px] text-slate-500 font-mono italic">{subText}</span>}
+        {subText && <span className="text-[9px] text-slate-500 font-mono italic">{parseVal(subText)}</span>}
       </div>
     </div>
   );
 };
 
-// --- Sub-component: Quarterly Report Card ---
+// --- Sub-component: Quarterly Card ---
 const QuarterlyCard = ({ q, formatContent }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const tags = Array.isArray(q.tags) ? q.tags : (q.tags ? String(q.tags).split(/[,，]/) : []);
@@ -195,11 +179,11 @@ const QuarterlyCard = ({ q, formatContent }) => {
             <FileText size={24} />
           </div>
           <div>
-            <h3 className="text-xl lg:text-3xl font-black text-white uppercase italic leading-tight">{q.title}</h3>
+            <h3 className="text-xl lg:text-3xl font-black text-white uppercase italic leading-tight">{parseVal(q.title)}</h3>
             <div className="flex flex-wrap gap-2 mt-3 text-left">
               {tags.map((tag, idx) => (
                 <span key={idx} className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full text-[9px] font-bold text-blue-400 uppercase tracking-wider">
-                  <Tag size={8} /> {tag.trim()}
+                  <Tag size={8} /> {String(tag).trim()}
                 </span>
               ))}
             </div>
@@ -269,15 +253,14 @@ const App = () => {
         const raw = doc.data();
         const webData = raw.webData || {};
         
-        // Extract Metrics Grid Data with fallbacks
         const metricsGrid = webData.metricsGrid || {};
         const baseline = webData.baseline || {};
 
-        const lmePrice = metricsGrid.lme_price || raw.lme_price || 0;
-        const shfePrice = metricsGrid.shfe_price || raw.shfe_price || 0;
-        const dxyVal = metricsGrid.dxy || raw.dxy || 0;
-        const lmeStock = metricsGrid.lme_stock || raw.lme_stock || 0;
-        const shfeStock = metricsGrid.shfe_stock || raw.shfe_stock || 0;
+        const lmePrice = metricsGrid.lme_price ?? raw.lme_price;
+        const shfePrice = metricsGrid.shfe_price ?? raw.shfe_price;
+        const dxyVal = metricsGrid.dxy ?? raw.dxy;
+        const lmeStock = metricsGrid.lme_stock ?? raw.lme_stock;
+        const shfeStock = metricsGrid.shfe_stock ?? raw.shfe_stock;
 
         return { 
           id: doc.id, 
@@ -285,16 +268,16 @@ const App = () => {
           webData,
           metricsGrid,
           baseline,
-          summary: webData.summary || raw.summary || "",
-          outlook: webData.outlook || raw.outlook_analysis || raw.outlook || "",
-          fullContentMarkdown: webData.fullContentMarkdown || raw.content || "",
+          summary: parseVal(webData.summary || raw.summary, ""),
+          outlook: parseVal(webData.outlook || raw.outlook_analysis || raw.outlook, ""),
+          fullContentMarkdown: parseVal(webData.fullContentMarkdown || raw.content, ""),
           
           // Chart Numerical Values
-          lme_price_numeric: typeof lmePrice === 'string' ? parseFloat(lmePrice.replace(/,/g, '')) : parseFloat(lmePrice), 
-          shfe_price_numeric: typeof shfePrice === 'string' ? parseFloat(shfePrice.replace(/,/g, '')) : parseFloat(shfePrice),
-          dxy_numeric: typeof dxyVal === 'string' ? parseFloat(dxyVal) : parseFloat(dxyVal),
-          lme_stock_numeric: typeof lmeStock === 'string' ? parseFloat(lmeStock.replace(/,/g, '')) : parseFloat(lmeStock),
-          shfe_stock_numeric: typeof shfeStock === 'string' ? parseFloat(shfeStock.replace(/,/g, '')) : parseFloat(shfeStock)
+          lme_price_numeric: parseNumber(lmePrice), 
+          shfe_price_numeric: parseNumber(shfePrice),
+          dxy_numeric: parseNumber(dxyVal),
+          lme_stock_numeric: parseNumber(lmeStock),
+          shfe_stock_numeric: parseNumber(shfeStock)
         };
       });
 
@@ -324,14 +307,15 @@ const App = () => {
 
   const formatContent = (text) => {
     if (!text) return "";
-    return String(text).trim();
+    return parseVal(text, "").trim();
   };
 
   const generateDeepInsight = async () => {
     if (!activeReport) return;
     setInsightLoading(true);
     try {
-      const prompt = `Analyze the impact of Tin price at $${activeReport.metricsGrid?.lme_price || activeReport.lme_price} based on: ${activeReport.summary}. Output in English.`;
+      const priceVal = parseVal(activeReport.metricsGrid?.lme_price || activeReport.lme_price);
+      const prompt = `Analyze the impact of Tin price at $${priceVal} based on: ${activeReport.summary}. Output in English.`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -370,7 +354,8 @@ const App = () => {
     setChatInput("");
     setChatLoading(true);
     try {
-      const systemPrompt = `You are a senior metal industry analyst. Current context: Tin price $${activeReport?.metricsGrid?.lme_price}. Please answer in English.`;
+      const priceVal = parseVal(activeReport?.metricsGrid?.lme_price || activeReport?.lme_price);
+      const systemPrompt = `You are a senior metal industry analyst. Current context: Tin price $${priceVal}. Please answer in English.`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -472,7 +457,7 @@ const App = () => {
                       className="bg-slate-900 border border-slate-700 text-white text-xs font-bold font-mono px-4 py-2.5 rounded-xl appearance-none pr-10 focus:outline-none focus:border-blue-500 cursor-pointer shadow-lg"
                     >
                       {reports.map(r => (
-                        <option key={r.id} value={r.id}>{r.id} ({r.metricsGrid?.lme_price ? `$${r.metricsGrid.lme_price}` : `$${r.lme_price}`})</option>
+                        <option key={r.id} value={r.id}>{r.id} (${parseVal(r.metricsGrid?.lme_price || r.lme_price)})</option>
                       ))}
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -488,33 +473,33 @@ const App = () => {
             <section className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <KpiCard 
                 title="LME 3M Price" 
-                value={activeReport.metricsGrid?.lme_price ? `$${activeReport.metricsGrid.lme_price}` : `$${activeReport.lme_price}`} 
-                wow={activeReport.metricsGrid?.lme_wow || activeReport.change_percent} 
+                value={`$${parseVal(activeReport.metricsGrid?.lme_price || activeReport.lme_price)}`} 
+                wow={parseWow(activeReport.metricsGrid?.lme_wow || activeReport.change_percent)} 
                 subText="USD / MT"
               />
               <KpiCard 
                 title="SHFE Main Price" 
-                value={activeReport.metricsGrid?.shfe_price ? `¥${activeReport.metricsGrid.shfe_price}` : `¥${activeReport.shfe_price || 'N/A'}`} 
-                wow={activeReport.metricsGrid?.shfe_wow || '0'} 
+                value={`¥${parseVal(activeReport.metricsGrid?.shfe_price || activeReport.shfe_price)}`} 
+                wow={parseWow(activeReport.metricsGrid?.shfe_wow)} 
                 subText="RMB / MT"
               />
               <KpiCard 
                 title="DXY Index" 
-                value={activeReport.metricsGrid?.dxy || activeReport.dxy || '104.5'} 
-                wow={activeReport.metricsGrid?.dxy_wow || '0'} 
+                value={parseVal(activeReport.metricsGrid?.dxy || activeReport.dxy, '104.5')} 
+                wow={parseWow(activeReport.metricsGrid?.dxy_wow)} 
                 subText="USD Index"
               />
               <KpiCard 
                 title="LME Stock" 
-                value={activeReport.metricsGrid?.lme_stock ? `${activeReport.metricsGrid.lme_stock} MT` : `${activeReport.lme_stock || 'N/A'} MT`} 
-                wow={activeReport.metricsGrid?.lme_stock_wow || '0'} 
-                subText={activeReport.baseline?.lme_stock_avg ? `4W Avg: ${activeReport.baseline.lme_stock_avg} MT` : 'LME Inventory'}
+                value={`${parseVal(activeReport.metricsGrid?.lme_stock || activeReport.lme_stock)} MT`} 
+                wow={parseWow(activeReport.metricsGrid?.lme_stock_wow)} 
+                subText={activeReport.baseline?.lme_stock_avg ? `4W Avg: ${parseVal(activeReport.baseline.lme_stock_avg)} MT` : 'LME Inventory'}
               />
               <KpiCard 
                 title="SHFE Stock" 
-                value={activeReport.metricsGrid?.shfe_stock ? `${activeReport.metricsGrid.shfe_stock} MT` : `${activeReport.shfe_stock || 'N/A'} MT`} 
-                wow={activeReport.metricsGrid?.shfe_stock_wow || '0'} 
-                subText={activeReport.baseline?.shfe_stock_avg ? `4W Avg: ${activeReport.baseline.shfe_stock_avg} MT` : 'SHFE Inventory'}
+                value={`${parseVal(activeReport.metricsGrid?.shfe_stock || activeReport.shfe_stock)} MT`} 
+                wow={parseWow(activeReport.metricsGrid?.shfe_stock_wow)} 
+                subText={activeReport.baseline?.shfe_stock_avg ? `4W Avg: ${parseVal(activeReport.baseline.shfe_stock_avg)} MT` : 'SHFE Inventory'}
               />
             </section>
 
