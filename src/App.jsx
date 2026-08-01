@@ -467,36 +467,36 @@ const App = () => {
               </div>
             </header>
 
-            {/* 1. TOP: Executive Key Metrics Grid (5 Cards) */}
+           {/* 1. TOP: Executive Key Metrics Grid (5 Cards) */}
             <section className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <KpiCard 
                 title="LME 3M Price" 
-                value={`$${parseVal(activeReport.metricsGrid?.lme_price || activeReport.lme_price)}`} 
-                wow={parseWow(activeReport.metricsGrid?.lme_wow || activeReport.change_percent)} 
+                value={`$${activeReport.lme_price_val}`} 
+                wow={activeReport.lme_price_wow} 
                 subText="USD / MT"
               />
               <KpiCard 
                 title="SHFE Main Price" 
-                value={`¥${parseVal(activeReport.metricsGrid?.shfe_price || activeReport.shfe_price)}`} 
-                wow={parseWow(activeReport.metricsGrid?.shfe_wow)} 
+                value={`¥${activeReport.shfe_price_val}`} 
+                wow={activeReport.shfe_price_wow} 
                 subText="RMB / MT"
               />
               <KpiCard 
                 title="DXY Index" 
-                value={parseVal(activeReport.metricsGrid?.dxy || activeReport.dxy, '104.5')} 
-                wow={parseWow(activeReport.metricsGrid?.dxy_wow)} 
+                value={activeReport.dxy_val} 
+                wow={activeReport.dxy_wow} 
                 subText="USD Index"
               />
               <KpiCard 
                 title="LME Stock" 
-                value={`${parseVal(activeReport.metricsGrid?.lme_stock || activeReport.lme_stock)} MT`} 
-                wow={parseWow(activeReport.metricsGrid?.lme_stock_wow)} 
+                value={`${activeReport.lme_stock_val} MT`} 
+                wow={activeReport.lme_stock_wow} 
                 subText={activeReport.baseline?.lme_stock_avg ? `4W Avg: ${parseVal(activeReport.baseline.lme_stock_avg)} MT` : 'LME Inventory'}
               />
               <KpiCard 
                 title="SHFE Stock" 
-                value={`${parseVal(activeReport.metricsGrid?.shfe_stock || activeReport.shfe_stock)} MT`} 
-                wow={parseWow(activeReport.metricsGrid?.shfe_stock_wow)} 
+                value={`${activeReport.shfe_stock_val} MT`} 
+                wow={activeReport.shfe_stock_wow} 
                 subText={activeReport.baseline?.shfe_stock_avg ? `4W Avg: ${parseVal(activeReport.baseline.shfe_stock_avg)} MT` : 'SHFE Inventory'}
               />
             </section>
