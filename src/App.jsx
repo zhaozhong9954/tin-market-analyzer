@@ -98,6 +98,58 @@ const parseNumber = (val) => {
   return 0;
 };
 
+// --- Clean Markdown (Remove References/Sources Section) ---
+const cleanMarkdownReferences = (text) => {
+  if (!text || typeof text !== 'string') return "";
+  return text.split(/(?=#+\s*(References|Sources|参考|参考资料|Reference))/i)[0].trim();
+};
+
+// --- Sub-component: Markdown Viewer ---
+const MarkdownViewer = ({ content }) => {
+  const cleanedContent = cleanMarkdownReferences(content);
+  if (!cleanedContent) {
+    return <div className="text-slate-500 italic text-sm py-4">No report content available.</div>;
+  }
+
+  const renderFormattedMarkdown = (text) => {
+    const lines = text.split('\n');
+    return lines.map((line, index) => {
+      if (line.startsWith('# ')) {
+        return <h1 key={index} className="text-2xl font-black text-white mt-8 mb-4 italic uppercase border-b border-slate-800 pb-2">{line.replace('# ', '')}</h1>;
+      }
+      if (line.startsWith('## ')) {
+        return <h2 key={index} className="text-xl font-bold text-blue-400 mt-6 mb-3 uppercase tracking-wide">{line.replace('## ', '')}</h2>;
+      }
+      if (line.startsWith('### ')) {
+        return <h3 key={index} className="text-lg font-semibold text-slate-200 mt-4 mb-2">{line.replace('### ', '')}</h3>;
+      }
+      if (line.startsWith('> ')) {
+        return (
+          <blockquote key={index} className="my-4 border-l-4 border-blue-500 bg-slate-900/60 p-4 rounded-r-xl italic text-slate-300">
+            {line.replace('> ', '')}
+          </blockquote>
+        );
+      }
+      if (line.startsWith('- ') || line.startsWith('* ')) {
+        return (
+          <li key={index} className="ml-6 list-disc text-slate-300 my-1 leading-relaxed">
+            {line.replace(/^[-*]\s+/, '')}
+          </li>
+        );
+      }
+      if (line.trim() === '') return <div key={index} className="h-4" />;
+
+      return (
+        <p key={index} className="text-slate-300 text-sm lg:text-base leading-relaxed my-2">
+          {line}
+        </p>
+      );
+    });
+  };
+
+  return <div className="markdown-body space-y-2">{renderFormattedMarkdown(cleanedContent)}</div>;
+};
+
 // --- Sub-component: KPI Metric Card ---
 const KpiCard = ({ title, value, wow, subText }) => {
   const wowStr = parseWow(wow, '0');
@@ -122,7 +174,7 @@ const KpiCard = ({ title, value, wow, subText }) => {
 };
 
 // --- Sub-component: Quarterly Card ---
-const QuarterlyCard = ({ q, formatContent, onRequireSubscription }) => {
+const QuarterlyCard = ({ q, formatContent, onOpenReader }) => {
   const tags = Array.isArray(q.tags) ? q.tags : (q.tags ? String(q.tags).split(/[,，]/) : []);
 
   return (
@@ -153,10 +205,10 @@ const QuarterlyCard = ({ q, formatContent, onRequireSubscription }) => {
       </div>
 
       <button 
-        onClick={onRequireSubscription}
-        className="mt-4 flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl"
+        onClick={() => onOpenReader(q.title || `Quarterly Report ${q.id}`, q.content || q.summary)}
+        className="mt-4 flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl"
       >
-        <Lock size={14} className="text-yellow-400" /> Read Full Quarterly Report
+        <BookOpen size={14} /> Read Full Quarterly Report
       </button>
     </div>
   );
@@ -172,7 +224,9 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   
-  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false); // 控制订阅未开放提示弹窗
+  // 弹窗状态管理
+  const [fullReaderData, setFullReaderData] = useState(null); // 控制全文阅读器弹窗 ({ title, content })
+  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false); // 控制 Ask Think Tank 订阅弹窗
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [deepInsight, setDeepInsight] = useState("");
@@ -213,6 +267,7 @@ const App = () => {
           baseline,
           summary: parseVal(webData.summary || raw.summary, ""),
           outlook: parseVal(webData.outlook || raw.outlook_analysis || raw.outlook, ""),
+          fullContentMarkdown: parseVal(webData.fullContentMarkdown || raw.content, ""),
           
           lme_price_numeric: parseNumber(lmePrice), 
           shfe_price_numeric: parseNumber(shfePrice),
@@ -481,8 +536,10 @@ const App = () => {
 
             </section>
 
-            {/* 3. BOTTOM: Executive Summary & Outlook Card */}
+            {/* 3. BOTTOM: Executive Summary & Full Article Modal Trigger */}
             <section className="space-y-6">
+              
+              {/* AI Summary Callout Box */}
               <div className="bg-blue-950/40 border-l-4 border-blue-500 border-y border-r border-slate-800/80 p-6 lg:p-8 rounded-r-2xl shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
@@ -503,18 +560,31 @@ const App = () => {
                     {activeReport.outlook}
                   </div>
                 )}
-
-                {/* 引导高级功能入口 */}
-                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-mono text-[10px]">Deep Intelligence Report & Interactive AI Assistant</span>
-                  <button 
-                    onClick={() => setSubscriptionModalOpen(true)}
-                    className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 font-bold text-xs transition-colors"
-                  >
-                    <Lock size={12} className="text-yellow-400" /> Unlock Full Weekly Analysis →
-                  </button>
-                </div>
               </div>
+
+              {/* 开放阅读全文的入口（带预告提醒） */}
+              <div className="bg-slate-950/80 border border-slate-800/80 p-6 lg:p-8 rounded-[2rem] shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group hover:border-blue-500/30 transition-all">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 text-xs font-mono uppercase">
+                    <FileText size={16} className="text-blue-500" />
+                    <span>Full Weekly Intelligence Report ({activeReport.id})</span>
+                  </div>
+                  <h3 className="text-lg lg:text-xl font-bold text-white italic">
+                    Deep Dive: Weekly Macro & Physical Fundamental Analysis
+                  </h3>
+                  <p className="text-slate-400 text-xs lg:text-sm line-clamp-2 max-w-3xl">
+                    {cleanMarkdownReferences(activeReport.fullContentMarkdown).substring(0, 220)}...
+                  </p>
+                </div>
+
+                <button 
+                  onClick={() => setFullReaderData({ title: `Tin Weekly Report (${activeReport.id})`, content: activeReport.fullContentMarkdown })}
+                  className="shrink-0 flex items-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-blue-900/30"
+                >
+                  <BookOpen size={16} /> Read Full Report
+                </button>
+              </div>
+
             </section>
 
           </div>
@@ -529,7 +599,7 @@ const App = () => {
                   key={q.id} 
                   q={q} 
                   formatContent={formatContent} 
-                  onRequireSubscription={() => setSubscriptionModalOpen(true)} 
+                  onOpenReader={(title, content) => setFullReaderData({ title, content })} 
                 />
               )) : (
                 <div className="bg-slate-900/30 border border-slate-800 border-dashed p-16 lg:p-24 rounded-[2rem] lg:rounded-[3.5rem] text-center"><HelpCircle className="mx-auto text-slate-800 mb-6" size={48} /><p className="text-slate-500 font-black uppercase text-xs tracking-[0.2em]">No Quarterly Reports Found</p></div>
@@ -539,7 +609,55 @@ const App = () => {
         )}
       </main>
 
-      {/* ✅ 订阅机制未开放（Pro Subscription Coming Soon）弹窗 */}
+      {/* ✅ 全文阅读沉浸式 Modal（带未来订阅提醒 Banner） */}
+      {fullReaderData && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex justify-center overflow-y-auto animate-in fade-in duration-300">
+          <div className="w-full max-w-4xl bg-slate-950 border-x border-slate-800 min-h-screen p-6 lg:p-12 text-left relative flex flex-col my-0 shadow-2xl">
+            
+            {/* Top Reader Header */}
+            <div className="sticky top-0 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 pb-4 mb-6 flex justify-between items-center z-10 pt-2">
+              <div className="flex items-center gap-3">
+                <span className="bg-blue-600 text-white text-[9px] font-black px-2.5 py-1 rounded tracking-widest uppercase italic">Full Reader</span>
+                <span className="text-blue-500 font-mono text-xs font-bold">{fullReaderData.title}</span>
+              </div>
+              <button 
+                onClick={() => setFullReaderData(null)}
+                className="p-2 text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-all border border-slate-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* 💡 未来订阅提示 Banner */}
+            <div className="mb-8 bg-blue-950/40 border border-blue-500/30 p-4 rounded-2xl flex items-center gap-3 text-xs text-blue-300">
+              <Lock size={16} className="text-yellow-400 shrink-0" />
+              <div>
+                <strong className="text-white uppercase tracking-wide text-[10px] block mb-0.5">Free Public Preview Active</strong>
+                Full reports are currently open to the public. In future versions, this deep analysis will move to our <strong>Pro Subscription Tier</strong>.
+              </div>
+            </div>
+
+            {/* Markdown Body */}
+            <div className="flex-1 text-slate-200">
+              <MarkdownViewer content={fullReaderData.content} />
+            </div>
+
+            {/* Footer Back Button */}
+            <div className="mt-12 pt-6 border-t border-slate-800 flex justify-between items-center">
+              <button 
+                onClick={() => setFullReaderData(null)}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold border border-slate-800 transition-all"
+              >
+                ← Back to Dashboard
+              </button>
+              <span className="text-slate-600 text-[10px] font-mono uppercase">End of Intelligence Report</span>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Ask Think Tank 订阅弹窗 */}
       {subscriptionModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-slate-950 border border-slate-800 p-8 lg:p-10 rounded-[2.5rem] max-w-md w-full text-center relative shadow-2xl space-y-6">
@@ -558,19 +676,10 @@ const App = () => {
               <span className="bg-blue-600/20 text-blue-400 border border-blue-500/30 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest italic">
                 Pro & Enterprise Service
               </span>
-              <h3 className="text-2xl font-black text-white italic uppercase tracking-tight">Subscription Coming Soon</h3>
+              <h3 className="text-2xl font-black text-white italic uppercase tracking-tight">AI Think Tank Coming Soon</h3>
               <p className="text-slate-400 text-xs leading-relaxed pt-2">
-                Deep-dive Weekly/Quarterly reports, Reference data, and AI Think Tank interactive Q&A will be exclusively available in the upcoming **Pro Tier Release**.
+                Interactive AI Q&A and customized market hedging alerts will be officially unlocked in our upcoming **Pro Subscription Tier**.
               </p>
-            </div>
-
-            <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 text-left space-y-2">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Planned Subscription Features:</div>
-              <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-4">
-                <li>Full Obsidian Weekly & Quarterly Markdown Intelligence</li>
-                <li>Unlimited Gemini Think Tank Interactive Q&A</li>
-                <li>Customized Arbitrage & Hedging Alerts</li>
-              </ul>
             </div>
 
             <button 
