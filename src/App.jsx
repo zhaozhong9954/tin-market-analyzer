@@ -4,7 +4,7 @@ import {
   Database, Activity, Info, Calendar, FileText, HelpCircle, 
   ChevronRight, ArrowRight, ExternalLink, Globe, Search,
   Sparkles, MessageSquare, Volume2, Loader2, Send, X, Share2, Mail, ShieldAlert,
-  ChevronDown, ChevronUp, Tag, Menu, Layers, Maximize2, BookOpen
+  ChevronDown, ChevronUp, Tag, Menu, Layers, BookOpen, Lock
 } from 'lucide-react';
 import { 
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
@@ -98,59 +98,6 @@ const parseNumber = (val) => {
   return 0;
 };
 
-// --- Clean Markdown (Remove References/Sources Section) ---
-const cleanMarkdownReferences = (text) => {
-  if (!text || typeof text !== 'string') return "";
-  // 切除 # References, ## References, ## 参考, ## Sources 及其后面的所有内容
-  return text.split(/(?=#+\s*(References|Sources|参考|参考资料|Reference))/i)[0].trim();
-};
-
-// --- Sub-component: Markdown Viewer ---
-const MarkdownViewer = ({ content }) => {
-  const cleanedContent = cleanMarkdownReferences(content);
-  if (!cleanedContent) {
-    return <div className="text-slate-500 italic text-sm py-4">No report content available.</div>;
-  }
-
-  const renderFormattedMarkdown = (text) => {
-    const lines = text.split('\n');
-    return lines.map((line, index) => {
-      if (line.startsWith('# ')) {
-        return <h1 key={index} className="text-2xl font-black text-white mt-8 mb-4 italic uppercase border-b border-slate-800 pb-2">{line.replace('# ', '')}</h1>;
-      }
-      if (line.startsWith('## ')) {
-        return <h2 key={index} className="text-xl font-bold text-blue-400 mt-6 mb-3 uppercase tracking-wide">{line.replace('## ', '')}</h2>;
-      }
-      if (line.startsWith('### ')) {
-        return <h3 key={index} className="text-lg font-semibold text-slate-200 mt-4 mb-2">{line.replace('### ', '')}</h3>;
-      }
-      if (line.startsWith('> ')) {
-        return (
-          <blockquote key={index} className="my-4 border-l-4 border-blue-500 bg-slate-900/60 p-4 rounded-r-xl italic text-slate-300">
-            {line.replace('> ', '')}
-          </blockquote>
-        );
-      }
-      if (line.startsWith('- ') || line.startsWith('* ')) {
-        return (
-          <li key={index} className="ml-6 list-disc text-slate-300 my-1 leading-relaxed">
-            {line.replace(/^[-*]\s+/, '')}
-          </li>
-        );
-      }
-      if (line.trim() === '') return <div key={index} className="h-4" />;
-
-      return (
-        <p key={index} className="text-slate-300 text-sm lg:text-base leading-relaxed my-2">
-          {line}
-        </p>
-      );
-    });
-  };
-
-  return <div className="markdown-body space-y-2">{renderFormattedMarkdown(cleanedContent)}</div>;
-};
-
 // --- Sub-component: KPI Metric Card ---
 const KpiCard = ({ title, value, wow, subText }) => {
   const wowStr = parseWow(wow, '0');
@@ -175,8 +122,7 @@ const KpiCard = ({ title, value, wow, subText }) => {
 };
 
 // --- Sub-component: Quarterly Card ---
-const QuarterlyCard = ({ q, formatContent }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+const QuarterlyCard = ({ q, formatContent, onRequireSubscription }) => {
   const tags = Array.isArray(q.tags) ? q.tags : (q.tags ? String(q.tags).split(/[,，]/) : []);
 
   return (
@@ -203,22 +149,14 @@ const QuarterlyCard = ({ q, formatContent }) => {
       </div>
 
       <div className="text-slate-300 leading-[1.8] text-[15px] lg:text-[16px] mb-6 italic text-left tracking-wide">
-        {q.summary ? formatContent(q.summary) : "Expand to view deep analysis summary..."}
+        {q.summary ? formatContent(q.summary) : "Deep quarterly fundamental & macro outlook..."}
       </div>
 
-      {isExpanded && (
-        <div className="mt-6 pt-6 border-t border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className="text-slate-400 leading-[1.9] whitespace-pre-line text-[14px] lg:text-[15px] text-left bg-slate-950/40 p-6 lg:p-8 rounded-[1.5rem] border border-slate-800/50 tracking-normal break-words">
-            <MarkdownViewer content={q.content || "Content syncing..."} />
-          </div>
-        </div>
-      )}
-
       <button 
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={onRequireSubscription}
         className="mt-4 flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl"
       >
-        {isExpanded ? <><ChevronUp size={14} /> Hide Content</> : <><ChevronDown size={14} /> Read Full Report</>}
+        <Lock size={14} className="text-yellow-400" /> Read Full Quarterly Report
       </button>
     </div>
   );
@@ -234,15 +172,11 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   
-  const [fullReaderOpen, setFullReaderOpen] = useState(false); // 1. 控制全文深研阅读模式弹窗
+  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false); // 控制订阅未开放提示弹窗
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [deepInsight, setDeepInsight] = useState("");
   const [insightLoading, setInsightLoading] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
   const [ttsLoading, setTtsLoading] = useState(false);
   const audioRef = useRef(null);
 
@@ -279,7 +213,6 @@ const App = () => {
           baseline,
           summary: parseVal(webData.summary || raw.summary, ""),
           outlook: parseVal(webData.outlook || raw.outlook_analysis || raw.outlook, ""),
-          fullContentMarkdown: parseVal(webData.fullContentMarkdown || raw.content, ""),
           
           lme_price_numeric: parseNumber(lmePrice), 
           shfe_price_numeric: parseNumber(shfePrice),
@@ -355,27 +288,6 @@ const App = () => {
     } catch (e) { console.error(e); } finally { setTtsLoading(false); }
   };
 
-  const handleChat = async () => {
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg = { role: 'user', content: chatInput };
-    setChatMessages(prev => [...prev, userMsg]);
-    setChatInput("");
-    setChatLoading(true);
-    try {
-      const priceVal = parseVal(activeReport?.metricsGrid?.lme_price || activeReport?.lme_price);
-      const systemPrompt = `You are a senior metal industry analyst. Current context: Tin price $${priceVal}. Please answer in English.`;
-      const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            contents: [{ parts: [{ text: chatInput }] }],
-            systemInstruction: { parts: [{ text: systemPrompt }] }
-        })
-      });
-      setChatMessages(prev => [...prev, { role: 'ai', content: result.candidates?.[0]?.content?.parts?.[0]?.text || "AI offline." }]);
-    } catch (e) { console.error(e); } finally { setChatLoading(false); }
-  };
-
   if (loading && !latestReport) return <div className="min-h-screen bg-[#020617] flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={32} /></div>;
 
   const NavContent = () => (
@@ -426,7 +338,12 @@ const App = () => {
         </div>
         <nav className="space-y-2 flex-1"><NavContent /></nav>
         <div className="mt-auto space-y-4">
-          <button onClick={() => setChatOpen(true)} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600/10 border border-indigo-600/30 text-indigo-400 rounded-xl font-bold text-sm hover:bg-indigo-600/20 transition-all"><MessageSquare size={16} /> ✨ Ask Think Tank</button>
+          <button 
+            onClick={() => setSubscriptionModalOpen(true)} 
+            className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600/10 border border-indigo-600/30 text-indigo-400 rounded-xl font-bold text-sm hover:bg-indigo-600/20 transition-all"
+          >
+            <MessageSquare size={16} /> ✨ Ask Think Tank
+          </button>
         </div>
       </aside>
 
@@ -564,10 +481,8 @@ const App = () => {
 
             </section>
 
-            {/* 3. BOTTOM: Executive Summary Callout + Full Article Collapsed Preview */}
+            {/* 3. BOTTOM: Executive Summary & Outlook Card */}
             <section className="space-y-6">
-              
-              {/* AI Summary Callout Box */}
               <div className="bg-blue-950/40 border-l-4 border-blue-500 border-y border-r border-slate-800/80 p-6 lg:p-8 rounded-r-2xl shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
@@ -588,31 +503,18 @@ const App = () => {
                     {activeReport.outlook}
                   </div>
                 )}
-              </div>
 
-              {/* Collapsed Article Card with Full Reader Trigger */}
-              <div className="bg-slate-950/80 border border-slate-800/80 p-6 lg:p-8 rounded-[2rem] shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group hover:border-blue-500/30 transition-all">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-slate-500 text-xs font-mono uppercase">
-                    <FileText size={16} className="text-blue-500" />
-                    <span>Full Weekly Intelligence Report ({activeReport.id})</span>
-                  </div>
-                  <h3 className="text-lg lg:text-xl font-bold text-white italic">
-                    Deep Dive: Weekly Macro & Physical Fundamental Analysis
-                  </h3>
-                  <p className="text-slate-400 text-xs lg:text-sm line-clamp-2 max-w-3xl">
-                    {cleanMarkdownReferences(activeReport.fullContentMarkdown).substring(0, 220)}...
-                  </p>
+                {/* 引导高级功能入口 */}
+                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-mono text-[10px]">Deep Intelligence Report & Interactive AI Assistant</span>
+                  <button 
+                    onClick={() => setSubscriptionModalOpen(true)}
+                    className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 font-bold text-xs transition-colors"
+                  >
+                    <Lock size={12} className="text-yellow-400" /> Unlock Full Weekly Analysis →
+                  </button>
                 </div>
-
-                <button 
-                  onClick={() => setFullReaderOpen(true)}
-                  className="shrink-0 flex items-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-blue-900/30"
-                >
-                  <BookOpen size={16} /> Read Full Report
-                </button>
               </div>
-
             </section>
 
           </div>
@@ -622,7 +524,14 @@ const App = () => {
           <div className="animate-in fade-in slide-in-from-left-4 duration-500 text-left">
             <h1 className="text-3xl lg:text-5xl font-black text-white mb-8 lg:mb-10 tracking-tighter uppercase italic text-left">Quarterly Deep Analysis</h1>
             <div className="grid grid-cols-1 gap-8 text-left">
-              {quarterlyReports.length > 0 ? quarterlyReports.map(q => <QuarterlyCard key={q.id} q={q} formatContent={formatContent} />) : (
+              {quarterlyReports.length > 0 ? quarterlyReports.map(q => (
+                <QuarterlyCard 
+                  key={q.id} 
+                  q={q} 
+                  formatContent={formatContent} 
+                  onRequireSubscription={() => setSubscriptionModalOpen(true)} 
+                />
+              )) : (
                 <div className="bg-slate-900/30 border border-slate-800 border-dashed p-16 lg:p-24 rounded-[2rem] lg:rounded-[3.5rem] text-center"><HelpCircle className="mx-auto text-slate-800 mb-6" size={48} /><p className="text-slate-500 font-black uppercase text-xs tracking-[0.2em]">No Quarterly Reports Found</p></div>
               )}
             </div>
@@ -630,51 +539,46 @@ const App = () => {
         )}
       </main>
 
-      {/* ✅ FULL ARTICLE READER MODAL (沉浸式深研全屏阅读模式) */}
-      {fullReaderOpen && activeReport && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex justify-center overflow-y-auto animate-in fade-in duration-300">
-          <div className="w-full max-w-4xl bg-slate-950 border-x border-slate-800 min-h-screen p-6 lg:p-12 text-left relative flex flex-col my-0 shadow-2xl">
-            
-            {/* Modal Header */}
-            <div className="sticky top-0 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 pb-4 mb-8 flex justify-between items-center z-10 pt-2">
-              <div className="flex items-center gap-3">
-                <span className="bg-blue-600 text-white text-[9px] font-black px-2.5 py-1 rounded tracking-widest uppercase italic">Full Intelligence Reader</span>
-                <span className="text-blue-500 font-mono text-xs font-bold">{activeReport.id}</span>
-              </div>
-              <button 
-                onClick={() => setFullReaderOpen(false)}
-                className="p-2 text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-all border border-slate-800"
-              >
-                <X size={20} />
-              </button>
+      {/* ✅ 订阅机制未开放（Pro Subscription Coming Soon）弹窗 */}
+      {subscriptionModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-950 border border-slate-800 p-8 lg:p-10 rounded-[2.5rem] max-w-md w-full text-center relative shadow-2xl space-y-6">
+            <button 
+              onClick={() => setSubscriptionModalOpen(false)}
+              className="absolute top-6 right-6 text-slate-500 hover:text-white p-2 rounded-xl bg-slate-900"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-16 h-16 bg-blue-600/10 border border-blue-500/20 text-blue-400 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
+              <Lock size={32} className="text-yellow-400" />
             </div>
 
-            {/* Modal Title */}
-            <div className="mb-8 border-b border-slate-800/80 pb-6">
-              <h1 className="text-2xl lg:text-4xl font-black text-white italic tracking-tight mb-3">
-                Tin Weekly Intelligence Report — {activeReport.id}
-              </h1>
-              <div className="text-slate-500 text-xs font-mono">
-                Source: Automated Tin-Market-Analyzer Intelligence Pipeline
-              </div>
+            <div className="space-y-2">
+              <span className="bg-blue-600/20 text-blue-400 border border-blue-500/30 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest italic">
+                Pro & Enterprise Service
+              </span>
+              <h3 className="text-2xl font-black text-white italic uppercase tracking-tight">Subscription Coming Soon</h3>
+              <p className="text-slate-400 text-xs leading-relaxed pt-2">
+                Deep-dive Weekly/Quarterly reports, Reference data, and AI Think Tank interactive Q&A will be exclusively available in the upcoming **Pro Tier Release**.
+              </p>
             </div>
 
-            {/* Markdown Body (No References) */}
-            <div className="flex-1 text-slate-200">
-              <MarkdownViewer content={activeReport.fullContentMarkdown} />
+            <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 text-left space-y-2">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Planned Subscription Features:</div>
+              <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-4">
+                <li>Full Obsidian Weekly & Quarterly Markdown Intelligence</li>
+                <li>Unlimited Gemini Think Tank Interactive Q&A</li>
+                <li>Customized Arbitrage & Hedging Alerts</li>
+              </ul>
             </div>
 
-            {/* Footer Back Button */}
-            <div className="mt-12 pt-6 border-t border-slate-800 flex justify-between items-center">
-              <button 
-                onClick={() => setFullReaderOpen(false)}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold border border-slate-800 transition-all"
-              >
-                ← Back to Dashboard
-              </button>
-              <span className="text-slate-600 text-[10px] font-mono uppercase">End of Weekly Report</span>
-            </div>
-
+            <button 
+              onClick={() => setSubscriptionModalOpen(false)}
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-blue-900/40"
+            >
+              Got It
+            </button>
           </div>
         </div>
       )}
@@ -696,20 +600,14 @@ const App = () => {
         </div>
       </footer>
 
-      {/* Floating AI Chat Button for Mobile */}
-      <button onClick={() => setChatOpen(true)} className="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center z-40 border border-blue-400/30 transition-transform active:scale-95"><Sparkles size={24} /></button>
+      {/* Floating AI Button for Mobile -> Triggers Subscription Notice */}
+      <button 
+        onClick={() => setSubscriptionModalOpen(true)} 
+        className="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center z-40 border border-blue-400/30 transition-transform active:scale-95"
+      >
+        <Sparkles size={24} />
+      </button>
 
-      {/* AI Chat Drawer */}
-      {chatOpen && (
-        <div className="fixed inset-0 z-[60] flex justify-end">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setChatOpen(false)} />
-          <div className="relative w-full max-w-md bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-400 text-left">
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950"><div className="flex items-center gap-2 text-white font-bold"><Sparkles size={18} className="text-indigo-400" /> ✨ Tin AI Think Tank</div><button onClick={() => setChatOpen(false)} className="text-slate-500 p-2 hover:bg-slate-900 rounded-lg"><X size={20} /></button></div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide text-left">{chatMessages.map((msg, i) => (<div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium ${msg.role === 'user' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-200 border border-slate-700'}`}>{msg.content}</div></div>))}{chatLoading && <div className="flex justify-start text-left"><div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-sm"><Loader2 className="animate-spin text-blue-500" size={18} /></div></div>}</div>
-            <div className="p-6 border-t border-slate-800 bg-slate-950"><div className="flex gap-2 text-left"><input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleChat()} placeholder="Ask the analyst..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50" /><button onClick={handleChat} disabled={chatLoading} className="bg-blue-600 text-white p-3 rounded-xl shadow-lg shadow-blue-900/40"><Send size={18} /></button></div></div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
