@@ -71,7 +71,7 @@ const pcmToWav = (pcmData, sampleRate) => {
   return new Blob([buffer], { type: 'audio/wav' });
 };
 
-// --- Helper Functions ---
+// --- 精准数值提取工具 ---
 const parseVal = (val, fallback = 'N/A') => {
   if (val === null || val === undefined) return fallback;
   if (typeof val === 'object') {
@@ -153,7 +153,7 @@ const MarkdownViewer = ({ content }) => {
 // --- Sub-component: KPI Metric Card ---
 const KpiCard = ({ title, value, wow, subText }) => {
   const wowStr = parseWow(wow, '0');
-  const wowNum = parseFloat(wowStr.replace('%', '')) || 0;
+  const wowNum = parseFloat(String(wowStr).replace('%', '')) || 0;
   const isPositive = wowNum >= 0;
 
   return (
@@ -165,7 +165,7 @@ const KpiCard = ({ title, value, wow, subText }) => {
       <div className="mt-4 flex items-center justify-between border-t border-slate-800/60 pt-3">
         <div className={`flex items-center gap-1 text-xs font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
           {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-          <span>{wowStr ? `${isPositive && !wowStr.startsWith('+') ? '+' : ''}${wowStr}% WoW` : '0%'}</span>
+          <span>{wowStr ? `${isPositive && !String(wowStr).startsWith('+') ? '+' : ''}${wowStr} WoW` : '0% WoW'}</span>
         </div>
         {subText && <span className="text-[9px] text-slate-500 font-mono italic">{parseVal(subText)}</span>}
       </div>
@@ -224,9 +224,8 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   
-  // 弹窗状态管理
-  const [fullReaderData, setFullReaderData] = useState(null); // 控制全文阅读器弹窗 ({ title, content })
-  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false); // 控制 Ask Think Tank 订阅弹窗
+  const [fullReaderData, setFullReaderData] = useState(null);
+  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [deepInsight, setDeepInsight] = useState("");
@@ -252,7 +251,7 @@ const App = () => {
         const metricsGrid = webData.metricsGrid || {};
         const baseline = webData.baseline || {};
 
-        // 兼容 lme_3m_price 与 lme_price
+        // 全面兼容匹配 lme_3m_price / lme_price 等字段
         const lmePriceObj = metricsGrid.lme_3m_price ?? metricsGrid.lme_price ?? raw.lme_price;
         const shfePriceObj = metricsGrid.shfe_price ?? raw.shfe_price;
         const dxyObj = metricsGrid.dxy ?? raw.dxy;
@@ -266,27 +265,27 @@ const App = () => {
           metricsGrid,
           baseline,
           
-          // 统一提取价格与 WoW 字段
+          // 解析核心数值与 WoW 变动率
           lme_price_val: parseVal(lmePriceObj),
-          lme_price_wow: parseWow(lmePriceObj ?? metricsGrid.lme_wow ?? raw.change_percent),
+          lme_price_wow: parseWow(lmePriceObj?.pct_change ?? metricsGrid.lme_wow ?? raw.change_percent),
           
           shfe_price_val: parseVal(shfePriceObj),
-          shfe_price_wow: parseWow(shfePriceObj ?? metricsGrid.shfe_wow),
+          shfe_price_wow: parseWow(shfePriceObj?.pct_change ?? metricsGrid.shfe_wow),
 
           dxy_val: parseVal(dxyObj, '104.5'),
-          dxy_wow: parseWow(dxyObj ?? metricsGrid.dxy_wow),
+          dxy_wow: parseWow(dxyObj?.pct_change ?? metricsGrid.dxy_wow),
 
           lme_stock_val: parseVal(lmeStockObj),
-          lme_stock_wow: parseWow(lmeStockObj ?? metricsGrid.lme_stock_wow),
+          lme_stock_wow: parseWow(lmeStockObj?.pct_change ?? metricsGrid.lme_stock_wow),
 
           shfe_stock_val: parseVal(shfeStockObj),
-          shfe_stock_wow: parseWow(shfeStockObj ?? metricsGrid.shfe_stock_wow),
+          shfe_stock_wow: parseWow(shfeStockObj?.pct_change ?? metricsGrid.shfe_stock_wow),
 
           summary: parseVal(webData.summary || raw.summary, ""),
           outlook: parseVal(webData.outlook || raw.outlook_analysis || raw.outlook, ""),
           fullContentMarkdown: parseVal(webData.fullContentMarkdown || raw.content, ""),
           
-          // 图表数值计算
+          // 图表数值解析
           lme_price_numeric: parseNumber(lmePriceObj), 
           shfe_price_numeric: parseNumber(shfePriceObj),
           dxy_numeric: parseNumber(dxyObj),
@@ -328,7 +327,7 @@ const App = () => {
     if (!activeReport) return;
     setInsightLoading(true);
     try {
-      const priceVal = parseVal(activeReport.metricsGrid?.lme_price || activeReport.lme_price);
+      const priceVal = activeReport.lme_price_val;
       const prompt = `Analyze the impact of Tin price at $${priceVal} based on: ${activeReport.summary}. Output in English.`;
       const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
@@ -445,7 +444,7 @@ const App = () => {
                 <h1 className="text-3xl lg:text-4xl font-black text-white tracking-tighter italic uppercase">Global Tin Market Dashboard</h1>
               </div>
 
-              {/* Week Selector Dropdown & Speak Button */}
+              {/* Week Selector Dropdown */}
               <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
                 {reports.length > 0 && (
                   <div className="relative">
@@ -455,7 +454,7 @@ const App = () => {
                       className="bg-slate-900 border border-slate-700 text-white text-xs font-bold font-mono px-4 py-2.5 rounded-xl appearance-none pr-10 focus:outline-none focus:border-blue-500 cursor-pointer shadow-lg"
                     >
                       {reports.map(r => (
-                        <option key={r.id} value={r.id}>{r.id} (${parseVal(r.metricsGrid?.lme_price || r.lme_price)})</option>
+                        <option key={r.id} value={r.id}>{r.id} (${r.lme_price_val})</option>
                       ))}
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -467,7 +466,7 @@ const App = () => {
               </div>
             </header>
 
-           {/* 1. TOP: Executive Key Metrics Grid (5 Cards) */}
+            {/* 1. TOP: Executive Key Metrics Grid (5 Cards) */}
             <section className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <KpiCard 
                 title="LME 3M Price" 
@@ -580,7 +579,7 @@ const App = () => {
                 )}
               </div>
 
-              {/* 开放阅读全文的入口（带预告提醒） */}
+              {/* 开放阅读全文的入口 */}
               <div className="bg-slate-950/80 border border-slate-800/80 p-6 lg:p-8 rounded-[2rem] shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group hover:border-blue-500/30 transition-all">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-slate-500 text-xs font-mono uppercase">
@@ -627,7 +626,7 @@ const App = () => {
         )}
       </main>
 
-      {/* ✅ 全文阅读沉浸式 Modal（带未来订阅提醒 Banner） */}
+      {/* ✅ 全文阅读沉浸式 Modal */}
       {fullReaderData && (
         <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex justify-center overflow-y-auto animate-in fade-in duration-300">
           <div className="w-full max-w-4xl bg-slate-950 border-x border-slate-800 min-h-screen p-6 lg:p-12 text-left relative flex flex-col my-0 shadow-2xl">
@@ -646,7 +645,7 @@ const App = () => {
               </button>
             </div>
 
-            {/* 💡 未来订阅提示 Banner */}
+            {/* 未来订阅提示 Banner */}
             <div className="mb-8 bg-blue-950/40 border border-blue-500/30 p-4 rounded-2xl flex items-center gap-3 text-xs text-blue-300">
               <Lock size={16} className="text-yellow-400 shrink-0" />
               <div>
