@@ -4,7 +4,7 @@ import {
   Database, Activity, Info, Calendar, FileText, HelpCircle, 
   ChevronRight, ArrowRight, ExternalLink, Globe, Search,
   Sparkles, MessageSquare, Volume2, Loader2, Send, X, Share2, Mail, ShieldAlert,
-  ChevronDown, ChevronUp, Tag, Menu, Layers
+  ChevronDown, ChevronUp, Tag, Menu, Layers, Maximize2, BookOpen
 } from 'lucide-react';
 import { 
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
@@ -71,7 +71,7 @@ const pcmToWav = (pcmData, sampleRate) => {
   return new Blob([buffer], { type: 'audio/wav' });
 };
 
-// --- Helper Functions to safely parse Object or Primitive Values ---
+// --- Helper Functions ---
 const parseVal = (val, fallback = 'N/A') => {
   if (val === null || val === undefined) return fallback;
   if (typeof val === 'object') {
@@ -98,9 +98,17 @@ const parseNumber = (val) => {
   return 0;
 };
 
+// --- Clean Markdown (Remove References/Sources Section) ---
+const cleanMarkdownReferences = (text) => {
+  if (!text || typeof text !== 'string') return "";
+  // 切除 # References, ## References, ## 参考, ## Sources 及其后面的所有内容
+  return text.split(/(?=#+\s*(References|Sources|参考|参考资料|Reference))/i)[0].trim();
+};
+
 // --- Sub-component: Markdown Viewer ---
 const MarkdownViewer = ({ content }) => {
-  if (!content || typeof content !== 'string') {
+  const cleanedContent = cleanMarkdownReferences(content);
+  if (!cleanedContent) {
     return <div className="text-slate-500 italic text-sm py-4">No report content available.</div>;
   }
 
@@ -140,7 +148,7 @@ const MarkdownViewer = ({ content }) => {
     });
   };
 
-  return <div className="markdown-body space-y-2">{renderFormattedMarkdown(content)}</div>;
+  return <div className="markdown-body space-y-2">{renderFormattedMarkdown(cleanedContent)}</div>;
 };
 
 // --- Sub-component: KPI Metric Card ---
@@ -201,7 +209,7 @@ const QuarterlyCard = ({ q, formatContent }) => {
       {isExpanded && (
         <div className="mt-6 pt-6 border-t border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="text-slate-400 leading-[1.9] whitespace-pre-line text-[14px] lg:text-[15px] text-left bg-slate-950/40 p-6 lg:p-8 rounded-[1.5rem] border border-slate-800/50 tracking-normal break-words">
-            {formatContent(q.content || "Content syncing...")}
+            <MarkdownViewer content={q.content || "Content syncing..."} />
           </div>
         </div>
       )}
@@ -226,6 +234,7 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   
+  const [fullReaderOpen, setFullReaderOpen] = useState(false); // 1. 控制全文深研阅读模式弹窗
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [deepInsight, setDeepInsight] = useState("");
@@ -272,7 +281,6 @@ const App = () => {
           outlook: parseVal(webData.outlook || raw.outlook_analysis || raw.outlook, ""),
           fullContentMarkdown: parseVal(webData.fullContentMarkdown || raw.content, ""),
           
-          // Chart Numerical Values
           lme_price_numeric: parseNumber(lmePrice), 
           shfe_price_numeric: parseNumber(shfePrice),
           dxy_numeric: parseNumber(dxyVal),
@@ -556,7 +564,7 @@ const App = () => {
 
             </section>
 
-            {/* 3. BOTTOM: Executive Summary Callout + Full Markdown Article */}
+            {/* 3. BOTTOM: Executive Summary Callout + Full Article Collapsed Preview */}
             <section className="space-y-6">
               
               {/* AI Summary Callout Box */}
@@ -582,20 +590,27 @@ const App = () => {
                 )}
               </div>
 
-              {/* Full Markdown Article Body */}
-              <div className="bg-slate-950/80 border border-slate-800/80 p-6 lg:p-10 rounded-[2rem] shadow-2xl">
-                <div className="flex items-center gap-2 border-b border-slate-800 pb-4 mb-6">
-                  <FileText size={18} className="text-blue-500" />
-                  <h3 className="text-base font-black text-white uppercase italic">Full Intelligence Report</h3>
+              {/* Collapsed Article Card with Full Reader Trigger */}
+              <div className="bg-slate-950/80 border border-slate-800/80 p-6 lg:p-8 rounded-[2rem] shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group hover:border-blue-500/30 transition-all">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 text-xs font-mono uppercase">
+                    <FileText size={16} className="text-blue-500" />
+                    <span>Full Weekly Intelligence Report ({activeReport.id})</span>
+                  </div>
+                  <h3 className="text-lg lg:text-xl font-bold text-white italic">
+                    Deep Dive: Weekly Macro & Physical Fundamental Analysis
+                  </h3>
+                  <p className="text-slate-400 text-xs lg:text-sm line-clamp-2 max-w-3xl">
+                    {cleanMarkdownReferences(activeReport.fullContentMarkdown).substring(0, 220)}...
+                  </p>
                 </div>
 
-                {activeReport.fullContentMarkdown ? (
-                  <MarkdownViewer content={activeReport.fullContentMarkdown} />
-                ) : (
-                  <div className="text-slate-500 italic text-sm py-8 text-center">
-                    No full content markdown body uploaded for this week.
-                  </div>
-                )}
+                <button 
+                  onClick={() => setFullReaderOpen(true)}
+                  className="shrink-0 flex items-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-blue-900/30"
+                >
+                  <BookOpen size={16} /> Read Full Report
+                </button>
               </div>
 
             </section>
@@ -614,6 +629,55 @@ const App = () => {
           </div>
         )}
       </main>
+
+      {/* ✅ FULL ARTICLE READER MODAL (沉浸式深研全屏阅读模式) */}
+      {fullReaderOpen && activeReport && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex justify-center overflow-y-auto animate-in fade-in duration-300">
+          <div className="w-full max-w-4xl bg-slate-950 border-x border-slate-800 min-h-screen p-6 lg:p-12 text-left relative flex flex-col my-0 shadow-2xl">
+            
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 pb-4 mb-8 flex justify-between items-center z-10 pt-2">
+              <div className="flex items-center gap-3">
+                <span className="bg-blue-600 text-white text-[9px] font-black px-2.5 py-1 rounded tracking-widest uppercase italic">Full Intelligence Reader</span>
+                <span className="text-blue-500 font-mono text-xs font-bold">{activeReport.id}</span>
+              </div>
+              <button 
+                onClick={() => setFullReaderOpen(false)}
+                className="p-2 text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-all border border-slate-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Title */}
+            <div className="mb-8 border-b border-slate-800/80 pb-6">
+              <h1 className="text-2xl lg:text-4xl font-black text-white italic tracking-tight mb-3">
+                Tin Weekly Intelligence Report — {activeReport.id}
+              </h1>
+              <div className="text-slate-500 text-xs font-mono">
+                Source: Automated Tin-Market-Analyzer Intelligence Pipeline
+              </div>
+            </div>
+
+            {/* Markdown Body (No References) */}
+            <div className="flex-1 text-slate-200">
+              <MarkdownViewer content={activeReport.fullContentMarkdown} />
+            </div>
+
+            {/* Footer Back Button */}
+            <div className="mt-12 pt-6 border-t border-slate-800 flex justify-between items-center">
+              <button 
+                onClick={() => setFullReaderOpen(false)}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold border border-slate-800 transition-all"
+              >
+                ← Back to Dashboard
+              </button>
+              <span className="text-slate-600 text-[10px] font-mono uppercase">End of Weekly Report</span>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Disclaimer Footer */}
       <footer className="w-full lg:pl-64 mt-auto border-t border-slate-800/50 bg-[#020617] pb-12 pt-10">
