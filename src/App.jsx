@@ -249,15 +249,15 @@ const App = () => {
       const data = snapshot.docs.map(doc => {
         const raw = doc.data();
         const webData = raw.webData || {};
-        
         const metricsGrid = webData.metricsGrid || {};
         const baseline = webData.baseline || {};
 
-        const lmePrice = metricsGrid.lme_price ?? raw.lme_price;
-        const shfePrice = metricsGrid.shfe_price ?? raw.shfe_price;
-        const dxyVal = metricsGrid.dxy ?? raw.dxy;
-        const lmeStock = metricsGrid.lme_stock ?? raw.lme_stock;
-        const shfeStock = metricsGrid.shfe_stock ?? raw.shfe_stock;
+        // 兼容 lme_3m_price 与 lme_price
+        const lmePriceObj = metricsGrid.lme_3m_price ?? metricsGrid.lme_price ?? raw.lme_price;
+        const shfePriceObj = metricsGrid.shfe_price ?? raw.shfe_price;
+        const dxyObj = metricsGrid.dxy ?? raw.dxy;
+        const lmeStockObj = metricsGrid.lme_stock ?? raw.lme_stock;
+        const shfeStockObj = metricsGrid.shfe_stock ?? raw.shfe_stock;
 
         return { 
           id: doc.id, 
@@ -265,15 +265,33 @@ const App = () => {
           webData,
           metricsGrid,
           baseline,
+          
+          // 统一提取价格与 WoW 字段
+          lme_price_val: parseVal(lmePriceObj),
+          lme_price_wow: parseWow(lmePriceObj ?? metricsGrid.lme_wow ?? raw.change_percent),
+          
+          shfe_price_val: parseVal(shfePriceObj),
+          shfe_price_wow: parseWow(shfePriceObj ?? metricsGrid.shfe_wow),
+
+          dxy_val: parseVal(dxyObj, '104.5'),
+          dxy_wow: parseWow(dxyObj ?? metricsGrid.dxy_wow),
+
+          lme_stock_val: parseVal(lmeStockObj),
+          lme_stock_wow: parseWow(lmeStockObj ?? metricsGrid.lme_stock_wow),
+
+          shfe_stock_val: parseVal(shfeStockObj),
+          shfe_stock_wow: parseWow(shfeStockObj ?? metricsGrid.shfe_stock_wow),
+
           summary: parseVal(webData.summary || raw.summary, ""),
           outlook: parseVal(webData.outlook || raw.outlook_analysis || raw.outlook, ""),
           fullContentMarkdown: parseVal(webData.fullContentMarkdown || raw.content, ""),
           
-          lme_price_numeric: parseNumber(lmePrice), 
-          shfe_price_numeric: parseNumber(shfePrice),
-          dxy_numeric: parseNumber(dxyVal),
-          lme_stock_numeric: parseNumber(lmeStock),
-          shfe_stock_numeric: parseNumber(shfeStock)
+          // 图表数值计算
+          lme_price_numeric: parseNumber(lmePriceObj), 
+          shfe_price_numeric: parseNumber(shfePriceObj),
+          dxy_numeric: parseNumber(dxyObj),
+          lme_stock_numeric: parseNumber(lmeStockObj),
+          shfe_stock_numeric: parseNumber(shfeStockObj)
         };
       });
 
