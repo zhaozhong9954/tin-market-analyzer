@@ -9,6 +9,7 @@ import {
 import { 
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
+import { Analytics } from '@vercel/analytics/react';
 
 // --- Firebase Initialization ---
 import { initializeApp } from 'firebase/app';
@@ -733,6 +734,9 @@ const App = () => {
       >
         <Sparkles size={24} />
       </button>
+
+      {/* Vercel Web Analytics */}
+      <Analytics />
 
     </div>
   );
